@@ -1,0 +1,17 @@
+# !/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Mar 12 15:37:47 2019
+
+@author: python
+"""
+BEFORE_TRADING_START = 1
+SESSION_START = 2
+SESSION_END = 3
+
+MAX_MONTH_RANGE = 23
+MAX_WEEK_RANGE = 5
+
+DEFAULT_DELAY_BASE = 1
+DEFAULT_CAPITAL_BASE = 1e5
+DEFAULT_PER_CAPITAL_BASE = 2e4
