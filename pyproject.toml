@@ -52,7 +52,7 @@ grpcio = "^1.78.0"
 protobuf = ">=3.19,<7.0"
 build = "^1.5.0"
 poetry-core = "^2.4.0"
-bt-sdk = "0.14.6"
+bt-sdk = "0.14.7"
 
 [[tool.poetry.source]]
 name = "tuna"

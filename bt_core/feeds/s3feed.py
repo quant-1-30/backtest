@@ -1,1 +1,0 @@
-# juicefs + redis + minio

@@ -27,8 +27,15 @@ def get_ext_modules(): # trigger by poetry
             # "-Wno-sign-compare" 
         ),
         Extension(
-            name="bt_core.control.pnc", 
-            sources=["bt_core/control/pnc.pyx"],
+            name="bt_core.pnc", 
+            sources=["bt_core/pnc.pyx"],
+            include_dirs=[np.get_include(), current_dir],
+            language="c++", # vector/map
+            extra_compile_args=["-O3", "-std=c++11"],
+        ),
+        Extension(
+            name="bt_core.sizer", 
+            sources=["bt_core/sizer.pyx"],
             include_dirs=[np.get_include(), current_dir],
             language="c++", # vector/map
             extra_compile_args=["-O3", "-std=c++11"],

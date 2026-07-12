@@ -27,7 +27,6 @@ from pathlib import Path
 
 from .metabase import MetaParams, with_metaclass
 from .strategy import Strategy, SignalStrategy
-from .control.pnc import _pnc
 from .timer import Timer, TimerEvent
 from .errors import *
 from .stores import _stores
@@ -36,6 +35,8 @@ from .shm import LogRingBuffer
 from .utils.encoder import CustomJSONEncoder
 from .sink import LogConsumerThread
 from .utils.wrapper import consume_time
+from .pnc import Pnc
+from .sizer import Sizer
 
 
 class Cerebro(with_metaclass(MetaParams, object)):
@@ -270,28 +271,29 @@ class Cerebro(with_metaclass(MetaParams, object)):
         if not dt0:
             return
 
-        if self._dt_over(dt0):
-            print("check timer on_dt_over: ", dt0)
-            self._dispatch(runstrats, TimerEvent.EOD, dt0)
-
-        # --- Scheduled Timers ---
+        # ------------------------------ Scheduled Timers ----------------------------
         for t in self._pretimers: 
-            if t.check(dt0) and t.event_type != TimerEvent.EOD:
+            if t.check(dt0):
                 print("check timer: ", dt0)
                 self._dispatch(runstrats, t.event_type, dt0)
+        
+        if self._dt_over(dt0): # T + 1
+            print("check timer on_dt_over: ", dt0)
+            for strat in runstrats:
+                strat.on_dt_over(self.last_dts, dt0)
 
     def _dispatch(self, runstrats: list, event_type: int, dt0: int):
-            if event_type == TimerEvent.EOD: # on_dt_over ---> T+1 settlement
+            if event_type == TimerEvent.Risk: # risk control 
                 for strat in runstrats:
-                    strat.on_dt_over(self.last_dts, dt0) 
+                    strat.on_risk(self.last_dts) 
+
+            elif event_type == TimerEvent.Trade:
+                for strat in runstrats:
+                    strat.on_trade(self.last_dts) 
 
             elif event_type == TimerEvent.METRIC: # log shm
                 for strat in runstrats:
                     strat.notify_timer(self.last_dts)
-
-            # elif event_type == TimerEvent.RISK: # risk control 
-            #     for strat in runstrats:
-            #         strat.check_risk(self.last_dts)
 
 # ------------------------------------------------------------------ data  --------------------------------------------------------------
 
@@ -310,7 +312,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
             # add default datamaster
             datamaster = self.store.get_feed()
             datamaster.log_shm = self.log_shm
-            self.datas.insert(0, datamaster)
+            self.datas.insert(0, datamaster) # key point
 
     def resampledata(self, **kwargs):
         '''
@@ -331,9 +333,9 @@ class Cerebro(with_metaclass(MetaParams, object)):
 
 # ---------------------------------------------------------------- risk and strategy ------------------------------------------------------------
     
-    def addpnc(self, pnc="default", sizer_name: str="fixed", **kwargs):
+    def addpnc(self, sizer: Sizer, trading_days: list[int], **kwargs):
         '''Adds a TaskPlan instance to the system'''
-        self.pnc = _pnc[pnc](sizer_name, **kwargs)
+        self.pnc = Pnc(sizer, trading_days, **kwargs)
     
     def addstore(self, store: str="local", **kwargs):
         '''Adds an ``Store`` instance to the if not already present'''

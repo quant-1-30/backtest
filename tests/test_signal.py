@@ -5,13 +5,16 @@ import datetime
 import numpy as np
 
 from dotenv import load_dotenv
+from typing import Dict, Any
 
 import bt_core as bt
 import bt_core.indicators as btind
+
 from bt_core.cerebro import Cerebro
 from bt_core.feeds import *
 from bt_core.brokers import *
-
+from bt_core.pnc import Pnc
+from bt_protocol._protocol import SnapshotBody
 
 os.environ["GRPC_POLL_STRATEGY"] = "poll"
 
@@ -125,12 +128,29 @@ class DrawDownSignal(btind.Indicator):
         self.lines.signal[0] = 0.0 if np.isnan(signal) else signal # np.nan_to_num(signal) used for array not scalar
 
 
+class FixedSize(bt.Sizer):
+    '''
+    This sizer simply returns a fixed size for any operation.
+    Size can be controlled by number of tranches that a system
+    wishes to use to scale into trades by specifying the ``tranches``
+    parameter.
+    '''
+    def _getsizing(self, topk_info: Dict[bytes, Any], snapshot: SnapshotBody, isbuy: bool):
+        if isbuy:
+            ratio = self.p.stake / len(topk_info) if len(topk_info) > 1 else self.p.stake
+            _sizer = {sid: ratio for sid in topk_info.keys()}
+        else:
+            _sizer = {p.sid: 1.0 for p in snapshot.positions if p.size > 0}
+        return _sizer
+
+
 if __name__ == '__main__':
 
     load_dotenv()
     cerebro = Cerebro(client_id=uuid.UUID("e9f8cd38-e73c-453f-8a47-55beda640ae6").bytes, fmt="parquet") 
     cerebro.addstore() 
-    cerebro.addpnc(sizer_name="fixed", days_held=5, stake=0.9, dd=0.25)
+    
+    cerebro.addpnc(FixedSize(), [], days_held=5, stake=0.9, dd=0.25)
 
     # timer
     cerebro.add_timer(
@@ -151,9 +171,11 @@ if __name__ == '__main__':
     cerebro.add_signal(bt.SIGNAL_SHORT, SellSignal, ddata) 
     cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal) 
 
-    try:
-        cerebro.run(cash=100000, sid=[b"000001"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"], filler=b"default")
-    except Exception as e:
-        print(f"运行报错: {e}")
-        if hasattr(cerebro, '_shutdown'):
-            cerebro._shutdown()
+    # try:
+    #     cerebro.run(cash=100000, sid=[b"000001"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"], filler=b"default")
+    # except Exception as e:
+    #     print(f"运行报错: {e}")
+    #     if hasattr(cerebro, '_shutdown'):
+    #         cerebro._shutdown()
+
+    cerebro.run(cash=100000, sid=[b"000001"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"], filler=b"default")

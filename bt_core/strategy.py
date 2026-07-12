@@ -32,7 +32,7 @@ import bt_core as bt
 from .lineiterator import LineIterator, StrategyBase
 from .lineseries import LineSeriesStub
 from .metabase import with_metaclass, findowner
-from .utils import AutoOrderedDict, fast_uuid4_bytes
+from .utils import AutoOrderedDict, fast_uuid4_bytes, ts2intdt
 from .utils.comparsion import check_gt_zero, check_lt_zero, check_nanzero
 from .shm import SharedRingBuffer
 
@@ -81,9 +81,9 @@ class MetaStrategy(StrategyBase.__class__):
         _obj._minperiods = list()
         _obj.analyzers = list() # ItemCollection()
         _obj.stats = {} 
+        _obj.metrics = [] 
 
         _obj.snapshot = None
-        _obj.metrics = [] # used to Log indicator 
         return _obj, args, kwargs
 
     def dopostinit(cls, _obj, *args, **kwargs):
@@ -199,8 +199,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
 
         # inject trading_days into pnc
         trading_days = self.data0.benchmark_dret["day"].to_list()
-        self.pnc.set_trading_calendar(trading_days)
-
+        self.pnc._start(trading_days)
 
     def set_cash(self, **kwargs):
         cash = kwargs.pop("cash", 100000)
@@ -280,19 +279,27 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
                 analyzer.notify_timer(last_dts) # get_shm_events
 
     def _next(self):
-        self.check_risk()
-        
         self.clk_update() # advance differ from lineiterator _clk_update
         super(Strategy, self)._next()
-        # print("Strategy _next ", self.lines.datetime[0])
 
-    def check_risk(self):
-        current_prices = {self.data0.sid[0]: self.data0.close[0]} # only support one data feed for now
-        sell_plans = self.pnc.check_risk(current_prices, self.snapshot, self.stats)
+    def on_risk(self, current_dts: int): # position risk is not applied
+        snapshot = self.get_snapshot()
+        sell_plans = self.pnc.on_risk(snapshot, self.stats)
 
         if sell_plans:
-            self.sell(sell_plans)  
- 
+            self.sell(sell_plans) 
+
+    def on_trade(self, current_dts: int): 
+        print(f"[Strategy] Trigger on {current_dts}")
+
+        current_day = ts2intdt(current_dts)
+        topk = self.data[-1].get_topk(current_day)
+
+        snapshot = self.get_snapshot()
+        _plan = self.pnc.generate_plan(current_day, topk, snapshot) 
+        self.buy(_plan["sell"])
+        self.sell(_plan["buy"])
+
     def buy(self, buys, plimit: float=0.0, execType=0):
         '''Create a buy (long) order and send it to the broker 
           
@@ -341,13 +348,12 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         created_dt = 0.0 if np.isnan(created_dt) else created_dt
 
         for bplan in buys:
-            core = bplan.core
             order_id = fast_uuid4_bytes()
             order = OrderBody(
-                        sid=core["sid"],
+                        sid=bplan["sid"],
                         order_id=order_id,
-                        sizer_ratio=core["weight"], 
-                        price=core.get("price", 0.0),
+                        sizer_ratio=bplan["weight"], 
+                        price=bplan.get("price", 0.0),
                         order_type=0,
                         exec_type=0, 
                         created_dt=int(created_dt),
@@ -377,12 +383,12 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         created_dt = 0.0 if np.isnan(created_dt) else created_dt
 
         for splan in sells:
-            core = splan.core
             order_id = fast_uuid4_bytes()
+            sid = splan["sid"]
             order = OrderBody(
-                        sid=core["sid"],
+                        sid=sid,
                         order_id=order_id,
-                        sizer_ratio=core["weight"], 
+                        sizer_ratio=splan["weight"], 
                         price=core.get("price", 0.0),
                         order_type=1,
                         exec_type=execType, 
@@ -394,11 +400,11 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
             if trades:
                 print("sell trades: ", len(trades))
                 self.shm_chan.publish_snapshot(snapshot) 
-                filled[core["sid"]] = trades 
+                filled[sid] = trades 
             
             self.shm_chan.publish_order(order)
 
-        self.pnc.on_updt(filled)
+        self.pnc.on_execute(filled)
         self.snapshot = snapshot  
 
     def get_snapshot(self)-> SnapshotBody: 
@@ -518,71 +524,8 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
     def _next(self): # next
         super(SignalStrategy, self)._next()
         self._next_signal()
-        # if hasattr(self, '_next_custom'):
-        #     self._next_custom()
 
-    # def _next_signal(self): # not supported short sell 
-
-    #     sigs = self._signals
-    #     nosig = [[0.0]]
-
-    #     # Calculate current status of the signals
-    #     # ls_long = all(x[0] > 0.0 for x in sigs[bt.SIGNAL_LONGSHORT] or nosig)
-    #     # ls_short = all(x[0] < 0.0 for x in sigs[bt.SIGNAL_LONGSHORT] or nosig)
-
-    #     l_enter0 = all(x[0] > 0.0 for x in sigs[bt.SIGNAL_LONG] or nosig)
-    #     l_enter1 = all(x[0] < 0.0 for x in sigs[bt.SIGNAL_LONG_INV] or nosig)
-    #     l_enter2 = any(x[0] for x in sigs[bt.SIGNAL_LONG_ANY] or nosig)
-    #     l_enter = l_enter0 or l_enter1 or l_enter2
-
-    #     s_enter0 = all(x[0] < 0.0 for x in sigs[bt.SIGNAL_SHORT] or nosig)
-    #     s_enter1 = all(x[0] > 0.0 for x in sigs[bt.SIGNAL_SHORT_INV] or nosig)
-    #     s_enter2 = any(x[0] for x in sigs[bt.SIGNAL_SHORT_ANY] or nosig)
-    #     s_enter = s_enter0 or s_enter1 or s_enter2
-
-    #     l_ex0 = all(x[0] < 0.0 for x in sigs[bt.SIGNAL_LONGEXIT] or nosig)
-    #     l_ex1 = all(x[0] > 0.0 for x in sigs[bt.SIGNAL_LONGEXIT_INV] or nosig)
-    #     l_ex2 = any(x[0] for x in sigs[bt.SIGNAL_LONGEXIT_ANY] or nosig)
-    #     l_exit = l_ex0 or l_ex1 or l_ex2
-
-    #     s_ex0 = all(x[0] > 0.0 for x in sigs[bt.SIGNAL_SHORTEXIT] or nosig)
-    #     s_ex1 = all(x[0] < 0.0 for x in sigs[bt.SIGNAL_SHORTEXIT_INV] or nosig)
-    #     s_ex2 = any(x[0] for x in sigs[bt.SIGNAL_SHORTEXIT_ANY] or nosig)
-    #     s_exit = s_ex0 or s_ex1 or s_ex2
-
-    #     # but only if no "xxxExit" exists
-    #     l_rev = not self._longexit and s_enter # reverse --- longexit
-    #     s_rev = not self._shortexit and l_enter # reverse --- shortexit
-
-    #     # Opposite of individual long and short
-    #     l_leav0 = all(x[0] < 0.0 for x in sigs[bt.SIGNAL_LONG] or nosig)
-    #     l_leav1 = all(x[0] > 0.0 for x in sigs[bt.SIGNAL_LONG_INV] or nosig)
-    #     l_leav2 = any(x[0] for x in sigs[bt.SIGNAL_LONG_ANY] or nosig)
-    #     l_leave = l_leav0 or l_leav1 or l_leav2
-
-    #     s_leav0 = all(x[0] > 0.0 for x in sigs[bt.SIGNAL_SHORT] or nosig)
-    #     s_leav1 = all(x[0] < 0.0 for x in sigs[bt.SIGNAL_SHORT_INV] or nosig)
-    #     s_leav2 = any(x[0] for x in sigs[bt.SIGNAL_SHORT_ANY] or nosig)
-    #     s_leave = s_leav0 or s_leav1 or s_leav2
-
-    #     # Invalidate long leave if longexit signals are available
-    #     l_leave = not self._longexit and l_leave
-    #     # Invalidate short leave if shortexit signals are available
-    #     s_leave = not self._shortexit and s_leave
-
-    #     current_prices = {self.data0.sid[0]: self.data0.close[0]} # only support one data feed for now
-    #     snapshot = self.get_snapshot()
-    #     plan = self.pnc.generate_plan(current_prices, current_prices, snapshot, self.stats)  
-
-    #     if l_enter:
-    #         if self.p._accumulate:
-    #             self.buy(plan["buy"])
-    #     # elif l_exit or l_rev or l_leave:
-    #     else:
-    #         self.sell(plan["sell"]) 
-
-    def _next_signal(self): # not supported short sell 
-
+    def on_trade(self, current_dts: int): 
         sigs = self._signals
         nosig = [[0.0]]
 
@@ -636,13 +579,12 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
         if not has_signal: 
             return
 
-        current_prices = {self.data0.sid[0]: self.data0.close[0]} # patch for signal sid 
         snapshot = self.get_snapshot()
-        rebalance_plan = self.pnc.generate_plan(self.lines.datetime[0], current_prices, current_prices, snapshot, self.stats) 
+        _plan = self.pnc.generate_plan(current_dts, self.datas[-1], snapshot)
 
         if l_enter:
             if self.p._accumulate:
-                self.buy(rebalance_plan["buy"])
+                self.buy(_plan["buy"])
         # elif l_exit or l_rev or l_leave:
         else:
-            self.sell(rebalance_plan["sell"]) 
+            self.sell(_plan["sell"]) 
