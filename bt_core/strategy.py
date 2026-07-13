@@ -303,11 +303,9 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         self.buy(_plan["sell"])
         self.sell(_plan["buy"])
 
-    def buy(self, buys, plimit: float=0.0, execType=0):
+    def buy(self, buys, execType=0):
         '''Create a buy (long) order and send it to the broker 
           
-          - ``plimit`` (default: ``0.0``) means set price limit or not
-
           - ``exectype`` (default: ``int``)
 
             Possible values:
@@ -327,10 +325,10 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
             Possible values:
 
             - ``oco``. An order which can only be executed on order created_dt 
-                where open price be base of plimit
+                where open price be cheated on
 
             - ``occ``. An order which can only be executed on order created_dt
-                where close price be base of plimit
+                where close price be cheated on
 
             - ``smooth``. An order which can only be executed on order created_dt
                 where mean of ohlc
@@ -358,7 +356,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
                         sizer_ratio=bplan["weight"], 
                         price=bplan.get("price", 0.0),
                         order_type=0,
-                        exec_type=0, 
+                        exec_type=bplan["execType"], 
                         created_dt=int(created_dt),
                         filler=self._filler)
             snapshot = self.store.submit(self.experiment_id, order)
@@ -371,7 +369,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
 
         self.snapshot = snapshot  
         
-    def sell(self, sells, plimit: float=0.0, execType=0):
+    def sell(self, sells):
         '''
         To create a selll (short) order and send it to the broker
 
@@ -392,9 +390,9 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
                         sid=sid,
                         order_id=order_id,
                         sizer_ratio=splan["weight"], 
-                        price=core.get("price", 0.0),
+                        price=splan.get("price", 0.0),
                         order_type=1,
-                        exec_type=execType, 
+                        exec_type=splan["execType"], 
                         created_dt=int(created_dt),
                         filler=self._filler)
         
@@ -582,16 +580,12 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
             return
 
         current_day = ts2intdt(current_dts)
-        print("signal on_trade 1 ", current_day)
-
         topk = self.datas[-1].get_topk(current_day)
-        print("signal on_trade 2 ", topk)
         
         snapshot = self.get_snapshot()
-        print("signal on_trade 3 ", snapshot)
 
         _plan = self.pnc.generate_plan(current_dts, topk, snapshot)
-        print("signal on_trade 4 ", _plan)
+        print("generate_plan", _plan)
 
         if l_enter:
             if self.p._accumulate:

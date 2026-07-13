@@ -57,7 +57,7 @@ cdef class Pnc:
     # risk control on tick
     # ==============================================================================================
     
-    cpdef vector[TraderPlan] on_risk(self, object snapshot, dict stats):
+    cpdef vector[TraderPlan] on_risk(self, object snapshot, dict stats, int32_t execType=0):
         cdef double pnl
         cdef TraderPlan tmp
         cdef double current_price
@@ -80,7 +80,7 @@ cdef class Pnc:
                     tmp.weight = 1.0
                     tmp.size = pos.available
                     tmp.priority = 0
-                    tmp.isbuy = False
+                    tmp.execType = execType
 
                     sells_by_risk.push_back(tmp)
 
@@ -100,7 +100,11 @@ cdef class Pnc:
         #     pnl = current_price / pos.cost_basis 
 
         #     if pnl <= self.stake: 
-        #         tmp = TraderPlan(c_sid, 1.0, False, pos.available, priority=0) 
+        #         tmp.sid = c_sid
+        #         tmp.weight = 1.0
+        #         tmp.size = pos.available
+        #         tmp.priority = 0
+        #         tmp.execType = execType
         #         
         #         sells_by_risk.push_back(tmp) 
         #         self.pending_sells[py_sid] = tmp
@@ -111,11 +115,11 @@ cdef class Pnc:
     # generate execution plan
     # ================================================================================================
 
-    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int32_t current_day, dict topk_info, object snapshot): 
+    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int32_t current_day, dict topk_info, object snapshot, int32_t execType=0): 
             cdef bytes py_sid
             cdef cpp_string c_sid 
 
-            cdef int32_t days_held, slots, buy_rank=10, buy_count = 0
+            cdef int32_t days_held, slots, buy_rank=10
             cdef double wgt_ratio
             cdef TraderPlan tmp
 
@@ -125,24 +129,22 @@ cdef class Pnc:
 
             cdef unordered_map[cpp_string, double] s_wgt, b_wgt
             cdef unordered_map[cpp_string, double].iterator it_wgt
-
             cdef unordered_map[cpp_string, double] c_topk_info = topk_info
-            # cdef object py_k, py_v
-            # for py_k, py_v in topk_info.items():
-            #     if isinstance(py_k, str):
-            #         c_topk_info[<cpp_string>py_k.encode('utf-8')] = <double>py_v
-            #     else:
-            #         c_topk_info[<cpp_string>py_k] = <double>py_v 
            
             cdef list positions = snapshot.positions
             cdef object pos, account = snapshot.account 
-           
+
+            cdef int32_t active_positions_count = 0
+            cdef bint already_held
+            cdef bint should_sell
+                
             if self._last_trade_day == current_day or c_topk_info.empty():  
                 plan[<cpp_string>b"sell"] = sells
                 plan[<cpp_string>b"buy"] = buys
                 return plan
            
-            s_wgt = self.sizer.getsizing(topk_info, snapshot, False)
+            if self.sizer is not None:
+                s_wgt = self.sizer.getsizing(topk_info, snapshot, False)
 
             for pos in positions:
                 c_sid = <cpp_string>pos.sid
@@ -158,6 +160,16 @@ cdef class Pnc:
                 if days_held < self.interval - 1:
                     continue
 
+                should_sell = False
+           
+                # c_sid not topk and sell
+                if c_topk_info.find(c_sid) == c_topk_info.end():
+                    should_sell = True
+                elif days_held >= self.interval - 1:
+                    should_sell = True
+
+                if not should_sell:
+                    continue
 
                 if c_topk_info.find(c_sid) != c_topk_info.end():
                     continue
@@ -170,7 +182,7 @@ cdef class Pnc:
                 tmp.weight = wgt_ratio
                 tmp.size = pos.available
                 tmp.priority = 1
-                tmp.isbuy = False
+                tmp.execType = execType
 
                 sells.push_back(tmp) 
                 self.pending_sells[c_sid] = tmp  
@@ -180,12 +192,14 @@ cdef class Pnc:
             # ===================================================================================
             # 2. Slot Control
             # ===================================================================================
-            slots = c_topk_info.size() - (len(positions) - len(self.pending_sells))
-           
-            if slots <= 0:
-                plan[<cpp_string>b"sell"] = sells
-                plan[<cpp_string>b"buy"] = buys
-                return plan
+            active_positions_count = 0
+            for pos in positions:
+                c_sid = <cpp_string>pos.sid
+                    
+                if self.pending_sells.find(c_sid) == self.pending_sells.end():
+                    active_positions_count += 1
+                    
+            slots = <int32_t>c_topk_info.size() - active_positions_count
 
             # ===================================================================================
             # 3. Cash Control
@@ -207,23 +221,31 @@ cdef class Pnc:
                 if self.pending_sells.find(c_sid) != self.pending_sells.end():
                     continue
 
+                already_held = False
+                for pos in positions:
+                    if <cpp_string>pos.sid == c_sid:
+                        already_held = True
+                        break
+
+                if not already_held and slots <= 0:
+                    continue
+
                 it_wgt = b_wgt.find(c_sid)
                 wgt_ratio = deref(it_wgt).second if it_wgt != b_wgt.end() else 0.0
 
                 if wgt_ratio > 0:
-                     # strncpy(tmp.sid, c_sid, 31) # tmp.sid[31] = b'\0'
-                     tmp.sid = c_sid
-                     tmp.weight = wgt_ratio
-                     tmp.size = 0
-                     tmp.priority = buy_rank
-                     tmp.isbuy = True
+                    # strncpy(tmp.sid, c_sid, 31) # tmp.sid[31] = b'\0'
+                    tmp.sid = c_sid
+                    tmp.weight = wgt_ratio
+                    tmp.size = 0
+                    tmp.priority = buy_rank
+                    tmp.execType = execType
 
-                     buys.push_back(tmp)
-                     buy_count += 1
+                    buys.push_back(tmp)
+
+                    if not already_held:
+                        slots -= 1
                 
-                if buy_count >= slots:
-                    break
-
             c_sort(buys.begin(), buys.end(), compare_trader_plans)
 
             self._last_trade_day = current_day

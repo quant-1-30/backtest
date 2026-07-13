@@ -35,7 +35,6 @@ from .shm import LogRingBuffer
 from .utils.encoder import CustomJSONEncoder
 from .sink import LogConsumerThread
 from .utils.wrapper import consume_time
-from .pnc import Pnc
 from .sizer import Sizer
 
 
@@ -347,9 +346,9 @@ class Cerebro(with_metaclass(MetaParams, object)):
         '''
         self.sizer = sizercls(*args, **kwargs)
 
-    def addpnc(self, *args, **kwargs):
+    def addpnc(self, pnc_cls, *args, **kwargs):
         '''Adds a TaskPlan instance to the system'''
-        self.pnc = Pnc(self.sizer, *args, **kwargs)
+        self.pnc = pnc_cls(self.sizer, *args, **kwargs)
     
     def addstore(self, store: str, **kwargs):
         '''Adds an ``Store`` instance to the if not already present'''
