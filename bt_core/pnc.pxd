@@ -7,7 +7,7 @@ from bt_core.sizer cimport Sizer
 
 
 cdef struct TraderPlan:
-    char sid[32]     
+    cpp_string sid # char sid[32]   
     double weight    
     int32_t size      
     int32_t priority 
@@ -15,15 +15,16 @@ cdef struct TraderPlan:
 
 
 cdef class Pnc:
+    cdef Sizer sizer
 
     cdef int32_t interval
     cdef double stake
     cdef double dd
-    cdef Sizer sizer
 
     cdef vector[int32_t] v_trading_days
-    cdef dict pending_sells
     cdef int32_t _last_trade_day
+    
+    cdef unordered_map[cpp_string, TraderPlan] pending_sells
     
     cpdef void _start(self, list days_list)
 
@@ -31,6 +32,6 @@ cdef class Pnc:
     
     cpdef vector[TraderPlan] on_risk(self, object snapshot, dict stats)
     
-    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int64_t current_ts, dict topk_info, object snapshot) 
+    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int32_t current_day, dict topk_info, object snapshot) 
 
     cpdef void on_execute(self, dict sell_trades)

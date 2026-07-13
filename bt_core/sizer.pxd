@@ -9,7 +9,7 @@ cdef class Sizer:
         object snapshot, 
         bint isbuy) except *
 
-    cdef unordered_map[cpp_string, double] _getsizing(
+    cpdef unordered_map[cpp_string, double] _getsizing(
         self, 
         unordered_map[cpp_string, double] topk_info, 
         object snapshot, 

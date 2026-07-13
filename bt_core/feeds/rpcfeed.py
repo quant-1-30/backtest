@@ -102,11 +102,11 @@ class RemoteData(with_metaclass(MetaRemoteData, DataBase)):
 
         tick_body = QueryBody(start_date=kwargs["fromdate"], end_date=kwargs["todate"], sid=self.sid)
         self.get_adjfactor(tick_body)
-        print("finish adjfactor")
+        print("finish tick adjadjust")
 
         bench_body = QueryBody(start_date=kwargs["fromdate"], end_date=kwargs["todate"], sid=kwargs["benchmark"])
         self.get_dret(bench_body)
-        print("finish bench_body")
+        print("finish benchmark data")
 
         observable = self.mdapi.subscribe(tick_body, RpcTopic.Tick)
         observable.pipe(

@@ -31,7 +31,7 @@ cdef class Sizer:
         bint isbuy) except *:
         return self._getsizing(topk_info, snapshot, isbuy)
 
-    cdef unordered_map[cpp_string, double] _getsizing(
+    cpdef unordered_map[cpp_string, double] _getsizing(
         self, 
         unordered_map[cpp_string, double] topk_info, 
         object snapshot, 

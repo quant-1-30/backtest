@@ -139,9 +139,9 @@ cdef class Timer:
         
         self._nextdteos = 0.0
         self._curdate = date.min
-
+        
         # add timerEvent
-        self.event_type = kwargs.get("event_type", 1)
+        self.event_type = kwargs.get("event_type", 0) # default metrics
 
     cpdef void start(self, object data):
         self._tzdata = data
@@ -233,7 +233,7 @@ cdef class Timer:
         if self._isdata:
             d = self._tzdata.num2date(dt)
         else:
-            d = num2date(dt)
+            d = num2date(dt) # UTC ---> Aisa
 
         ddate = d.date()
 
@@ -275,9 +275,9 @@ cdef class Timer:
             if dt < self._dtwhen:
                 return False
 
-        # ==============================================================
+        # ==================================================================
         # dt >= self._dtwhen ---> trigger and calculate next self._dtwhen
-        # ==============================================================
+        # ==================================================================
 
         self._lastcall = ddate 
 

@@ -370,24 +370,18 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
             pass
         return bool(ret)
 
-    def on_dt_over(self, dts: int):
+    def notify_metrics(self, dts: int):
+        """
+        This method is called when a timer event is triggered. 
+        It can be used to log indicator metrics and notify analyzers that are interested in timer events.
+        """
         self.log_shm.publish_metric(b"open", self.open[-1], dts)
         self.log_shm.publish_metric(b"high", self.high[-1], dts)
         self.log_shm.publish_metric(b"low", self.low[-1], dts)
         self.log_shm.publish_metric(b"close", self.close[-1], dts)
         self.log_shm.publish_metric(b"volume", self.volume[-1], dts)
 
-    def notify_timer(self, dts: int): 
-        """
-        This method is called when a timer event is triggered. 
-        It can be used to log indicator metrics and notify analyzers that are interested in timer events.
-        """
-        # # self._getlinealias(lo)) / self.lines[i][0]
-        # self.log_shm.publish_metric(b"open", self.open[0], dts)
-        # self.log_shm.publish_metric(b"high", self.high[0], dts)
-        # self.log_shm.publish_metric(b"low", self.low[0], dts)
-        # self.log_shm.publish_metric(b"close", self.close[0], dts)
-        # self.log_shm.publish_metric(b"volume", self.volume[0], dts)
+    def on_dt_over(self, dts: int): 
         pass
 
 # --------------------------------------------------------------------- clone------------------------------------------------------------------------

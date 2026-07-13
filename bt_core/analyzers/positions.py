@@ -98,15 +98,8 @@ class PositionsAnalyzer(bt.TimeFrameAnalyzerBase):
             else:
                 raise ValueError(f'{tb["order_id"]} not founded')
 
-    def notify_timer(self, dt0: int):
-        self._process_events()
-
     def on_dt_over(self, dt0: int, snapshot: SnapshotBody):
         self._process_events()
-
-        # events = self.get_shm_events()
-        # accts = [act["data"] for act in events if act["type"] == "account"]
-        # snapshot = self._owner.get_snapshot()
 
         curr_value = snapshot.account.portfolio_value + snapshot.account.cash
         current_positions = {p.sid: p for p in snapshot.positions if p.size != 0}

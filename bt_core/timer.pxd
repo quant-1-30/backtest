@@ -2,10 +2,11 @@ from libc.stdint cimport int64_t, int32_t
 
 
 cpdef enum TimerEvent:
-    EOD = 0       
-    METRIC = 1   
-    RISK = 2     
-    UNKOWN = 3 
+    METRIC = 0   
+    RISK = 1    
+    TRADE = 2 
+    EOD = 3       
+    UNKOWN = 4
 
 
 cpdef enum Session:

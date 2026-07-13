@@ -98,9 +98,15 @@ class Cerebro(with_metaclass(MetaParams, object)):
         self.strats = list()
         self.analyzers = list()
         self.indicators = list()
+
         self.signals = list()
         self._signal_strat = (None, None, None)
         self._signal_accumulate = True
+        self.runstrats = list()
+        self._event_stop = False  # Stop is requested
+
+        self.sizer = None
+        self.pnc = None
         
         self.optcbs = list()  
         self.storecbs = list()
@@ -171,7 +177,8 @@ class Cerebro(with_metaclass(MetaParams, object)):
                   weekdays=[], weekcarry=False,
                   monthdays=[], monthcarry=True,
                   allow=None,
-                  tzdata=None):
+                  tzdata=None,
+                  *args, **kwargs):
         '''
         Arguments:
 
@@ -247,7 +254,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
             weekdays=weekdays, weekcarry=weekcarry,
             monthdays=monthdays, monthcarry=monthcarry,
             allow=allow,
-            tzdata=tzdata)
+            tzdata=tzdata, *args, **kwargs)
  
     def _dt_over(self, dt0: int): # Timer(when=Session.SESSION_START, event_type=0)
         isover = False
@@ -283,17 +290,19 @@ class Cerebro(with_metaclass(MetaParams, object)):
                 strat.on_dt_over(self.last_dts, dt0)
 
     def _dispatch(self, runstrats: list, event_type: int, dt0: int):
-            if event_type == TimerEvent.Risk: # risk control 
+            if event_type == TimerEvent.RISK: # risk control 
                 for strat in runstrats:
                     strat.on_risk(self.last_dts) 
 
-            elif event_type == TimerEvent.Trade:
+            elif event_type == TimerEvent.TRADE:
+                print("entering on_trade")
                 for strat in runstrats:
-                    strat.on_trade(self.last_dts) 
+                    strat.on_trade(self.last_dts)
+                print("finish on_trade") 
 
             elif event_type == TimerEvent.METRIC: # log shm
                 for strat in runstrats:
-                    strat.notify_timer(self.last_dts)
+                    strat.notify_metrics(self.last_dts)
 
 # ------------------------------------------------------------------ data  --------------------------------------------------------------
 
@@ -308,11 +317,10 @@ class Cerebro(with_metaclass(MetaParams, object)):
             _d.log_shm = self.log_shm
             self.datas.append(_d)
 
-        if dmaster:
-            # add default datamaster
+        if dmaster: # add default datamaster
             datamaster = self.store.get_feed()
             datamaster.log_shm = self.log_shm
-            self.datas.insert(0, datamaster) # key point
+            self.datas.insert(0, datamaster) 
 
     def resampledata(self, **kwargs):
         '''
@@ -332,12 +340,18 @@ class Cerebro(with_metaclass(MetaParams, object)):
         return dataname
 
 # ---------------------------------------------------------------- risk and strategy ------------------------------------------------------------
-    
-    def addpnc(self, sizer: Sizer, trading_days: list[int], **kwargs):
+
+    def addsizer(self, sizercls, *args, **kwargs):
+        '''Adds a ``Sizer`` class (and args) which is the default sizer for any
+        strategy added to cerebro
+        '''
+        self.sizer = sizercls(*args, **kwargs)
+
+    def addpnc(self, *args, **kwargs):
         '''Adds a TaskPlan instance to the system'''
-        self.pnc = Pnc(sizer, trading_days, **kwargs)
+        self.pnc = Pnc(self.sizer, *args, **kwargs)
     
-    def addstore(self, store: str="local", **kwargs):
+    def addstore(self, store: str, **kwargs):
         '''Adds an ``Store`` instance to the if not already present'''
         storecls = _stores[store]
         self.store = storecls(client_id=self.p.client_id, timeout=self.p.timeout, **kwargs)
@@ -440,33 +454,30 @@ class Cerebro(with_metaclass(MetaParams, object)):
           - For Optimization: a list of lists which contain instances of the
             Strategy classes added with ``addstrategy``
         '''
-        self.log_background.start()
-
-        self._next_id(kwargs) 
-        # Prepare feed
-        print("cerebro run data start")
-        self.adddata(dmaster=True)
-        
-        for data in self.datas:
-            data._start(**kwargs)
-
-        print("cerebro run data._start finish")
-
-        # timers trigger
-        for timer in self._pretimers: # itertools.chain(self._pretimers, self._mcstimers)
-            timer.start(self.datas[0]) # preprocess tzdata if needed
-
-        self.runstrats = list()
-        self._event_stop = False  # Stop is requested
-
         if not self.store:
             return []  # nothing can be run
-        
-        # update params with run kwargs
+
+        # Update params with run kwargs
         pkeys = self.params._getkeys()
         for key, val in kwargs.items():
             if key in pkeys:
                 setattr(self.params, key, val)
+
+        self._next_id(kwargs)
+
+        self.log_background.start()
+
+        # Prepare feed
+        print("Cerebro Prepare Feed and Set Dmaster")
+        self.adddata(dmaster=True)
+        for data in self.datas:
+            data._start(**kwargs)
+        print("Cerebro Datas _start finish")
+
+        # timers trigger
+        print("Cerebro Prepare Timers")
+        for timer in self._pretimers: 
+            timer.start(self.datas[0]) # set _tzdata 
 
         # signal strategy
         if self.signals:  # allow processing of signals

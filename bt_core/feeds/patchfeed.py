@@ -60,6 +60,9 @@ class ParquetPatch(DataBase):
 
     def get_topk(self, current_day: int) -> dict:
         return self.global_scores.get(current_day, {})
+    
+    def notify_metrics(self, dts: int):
+        pass
 
     def stop(self):
         super().stop()
@@ -81,7 +84,9 @@ class SignalPatch(DataBase):
 
     def get_topk(self, current_day: int) -> dict:
         return {self.sid: 0.0}
+    
+    def notify_metrics(self, dts: int):
+        pass
 
     def stop(self):
         super().stop()
-        self.global_scores.clear() 

@@ -197,7 +197,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         # setup metric
         self._setupMetrics()
 
-        # inject trading_days into pnc
+        # pnc _start
         trading_days = self.data0.benchmark_dret["day"].to_list()
         self.pnc._start(trading_days)
 
@@ -260,7 +260,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         for _d in self.datas:
             _d.on_dt_over(dts)
 
-    def notify_timer(self, last_dts: int): 
+    def notify_metrics(self, last_dts: int): 
         """
         This method is called when a timer event is triggered. 
         It can be used to log indicator metrics and notify analyzers that are interested in timer events.
@@ -275,8 +275,11 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
             self.log_shm.publish_metric(metric, val, last_dts)
 
         for analyzer in self.analyzers:
-            if hasattr(analyzer, 'notify_timer'):
-                analyzer.notify_timer(last_dts) # get_shm_events
+            if hasattr(analyzer, 'notify_metrics'):
+                analyzer.notify_metrics(last_dts) # get_shm_events
+        
+        for _d in self.datas:
+            _d.notify_metrics(last_dts)
 
     def _next(self):
         self.clk_update() # advance differ from lineiterator _clk_update
@@ -523,7 +526,6 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
 
     def _next(self): # next
         super(SignalStrategy, self)._next()
-        self._next_signal()
 
     def on_trade(self, current_dts: int): 
         sigs = self._signals
@@ -579,12 +581,21 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
         if not has_signal: 
             return
 
+        current_day = ts2intdt(current_dts)
+        print("signal on_trade 1 ", current_day)
+
+        topk = self.datas[-1].get_topk(current_day)
+        print("signal on_trade 2 ", topk)
+        
         snapshot = self.get_snapshot()
-        _plan = self.pnc.generate_plan(current_dts, self.datas[-1], snapshot)
+        print("signal on_trade 3 ", snapshot)
+
+        _plan = self.pnc.generate_plan(current_dts, topk, snapshot)
+        print("signal on_trade 4 ", _plan)
 
         if l_enter:
             if self.p._accumulate:
-                self.buy(_plan["buy"])
+                self.buy(_plan[b"buy"])
         # elif l_exit or l_rev or l_leave:
         else:
-            self.sell(_plan["sell"]) 
+            self.sell(_plan[b"sell"]) 

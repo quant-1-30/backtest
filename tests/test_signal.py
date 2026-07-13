@@ -1,4 +1,7 @@
 # Import the backtrader platform
+import faulthandler
+faulthandler.enable()
+
 import os
 import uuid
 import datetime
@@ -42,9 +45,8 @@ class WeekPriceSignal(btind.Indicator):
             last_week_sma = self.sma_weekly[0]
 
         self.lines.signal[0] = last_week_sma / self.data0.close[-1] - 1.0
-        # print("WeekPriceSignal ", self.lines.signal[0])
         if self.lines.signal[0] > 10.0:
-            raise ValueError("WeekPriceSignal corrupted")
+            raise ValueError(f"WeekPriceSignal corrupted {self.lines.signal[0]}")
             
 
 class DailyPriceSignal(btind.Indicator): 
@@ -58,9 +60,9 @@ class DailyPriceSignal(btind.Indicator):
     
     def next(self):
         signal = self.lines.signal[0]
-        # print("DailyPriceSignal ", signal)
         if signal > 10.0:
-            raise
+           print("DailyPriceSignal ", signal)
+           raise
 
 
 class MACDSignal(btind.Indicator): 
@@ -78,8 +80,8 @@ class MACDSignal(btind.Indicator):
     def next(self):
         signal = self.lines.signal[0] # macd', 'signal', 'histo'
         if not np.isnan(signal):
-            # print("MacdSignal :", signal)
-            pass
+           print("MacdSignal :", signal)
+
 
 class VolSignal(btind.Indicator):
 
@@ -92,9 +94,8 @@ class VolSignal(btind.Indicator):
 
     def next(self):
         signal = self.lines.signal[0]
-        # print("VolSignal ", signal)
         if signal > 30.0: 
-            raise
+           print("VolSignal ", signal)
 
 
 class SellSignal(btind.Indicator): 
@@ -135,9 +136,12 @@ class FixedSize(bt.Sizer):
     wishes to use to scale into trades by specifying the ``tranches``
     parameter.
     '''
+    def __init__(self, *args, **kwargs):
+        self.stake = kwargs.get("stake", 1.0)
+
     def _getsizing(self, topk_info: Dict[bytes, Any], snapshot: SnapshotBody, isbuy: bool):
         if isbuy:
-            ratio = self.p.stake / len(topk_info) if len(topk_info) > 1 else self.p.stake
+            ratio = self.stake / len(topk_info)
             _sizer = {sid: ratio for sid in topk_info.keys()}
         else:
             _sizer = {p.sid: 1.0 for p in snapshot.positions if p.size > 0}
@@ -148,34 +152,44 @@ if __name__ == '__main__':
 
     load_dotenv()
     cerebro = Cerebro(client_id=uuid.UUID("e9f8cd38-e73c-453f-8a47-55beda640ae6").bytes, fmt="parquet") 
-    cerebro.addstore() 
-    
-    cerebro.addpnc(FixedSize(), [], days_held=5, stake=0.9, dd=0.25)
+
+    # store / size  / pnc
+    cerebro.addstore("local")
+    cerebro.addsizer(FixedSize)
+    cerebro.addpnc(days_held=5, stake=0.9, dd=0.25)
 
     # timer
     cerebro.add_timer(
-        when=bt.timer.Session.SESSION_START, 
-        offset=datetime.timedelta(minutes=5), 
-        repeat=datetime.timedelta(minutes=15)
-    )  
+        # when=datetime.time(14, 50, 0),   
+        when=bt.timer.Session.SESSION_END,                  
+        offset=datetime.timedelta(minutes=-10),     
+        # repeat=datetime.timedelta(minutes=15), # intended for intraday
+        weekdays=[1, 2, 3, 4, 5],   
+        weekcarry=False,                            
+        event_type=bt.timer.TimerEvent.TRADE          
+    )
 
     # resample 
     ddata = cerebro.resampledata(timeframe=bt.TimeFrame.Days, adjbartime=False)
     wdata = cerebro.resampledata(timeframe=bt.TimeFrame.Weeks, adjbartime=False)
 
-    # data0作为主时钟
+    # signal
     cerebro.add_signal(bt.SIGNAL_LONG, WeekPriceSignal, ddata, wdata)
     cerebro.add_signal(bt.SIGNAL_LONG_INV, DailyPriceSignal, ddata)
     cerebro.add_signal(bt.SIGNAL_LONG, MACDSignal, ddata)
     cerebro.add_signal(bt.SIGNAL_LONG, VolSignal, ddata)
     cerebro.add_signal(bt.SIGNAL_SHORT, SellSignal, ddata) 
-    cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal) 
+    cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal)
+    
+    # add patchdata
+    from bt_core.feeds import SignalPatch
 
-    # try:
-    #     cerebro.run(cash=100000, sid=[b"000001"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"], filler=b"default")
-    # except Exception as e:
-    #     print(f"运行报错: {e}")
-    #     if hasattr(cerebro, '_shutdown'):
-    #         cerebro._shutdown()
+    patch_data = SignalPatch(sid=b"300308")
+    cerebro.adddata(patch_data)
 
-    cerebro.run(cash=100000, sid=[b"000001"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"], filler=b"default")
+    try:
+        cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"], filler=b"default")
+    except Exception as e:
+        print(f"运行报错: {e}")
+        if hasattr(cerebro, '_shutdown'):
+            cerebro._shutdown()

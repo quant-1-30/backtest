@@ -62,14 +62,9 @@ class Transactions(bt.TimeFrameAnalyzerBase):
         self.trades_cnt += trades_cnt
         return trades_cnt
 
-    def notify_timer(self, dt0: int):
-        trades_cnt = self._drain()
-        if trades_cnt > 0:
-            self.log_shm.publish_metric(b"TradesCnt", self.trades_cnt, dt0) # slope
-
     def on_dt_over(self, dt0: int, snapshot: SnapshotBody):
         self._drain() 
-        self.log_shm.publish_metric(b"TradesCnt", self.trades_cnt, dt0) 
+        self.log_shm.publish_metric(b"TradesCnt", self.trades_cnt, dt0) # slope
         self.trades_cnt = 0 # reset
 
     def stop(self):
