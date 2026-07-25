@@ -70,7 +70,7 @@ class TradingCalendarBase(with_metaclass(MetaParams, object)):
         Returns the iso week number of the next trading day, given a ``day``
         (datetime/date) instance
         '''
-        self._nextday(day)[1][1]  # 2 elem is isocal / 0 - y, 1 - wk, 2 - day
+        return self._nextday(day)[1][1]  # 2 elem is isocal / 0 - y, 1 - wk, 2 - day
 
     def last_weekday(self, day: datetime):
         '''

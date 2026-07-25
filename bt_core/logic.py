@@ -108,7 +108,12 @@ class CmpEx(Logic):
         self.r3 = self.args[4]
 
     def next(self):
-        self[0] = self.a[0] < self.b[0]
+        if self.a[0] < self.b[0]:
+            self[0] = self.r1[0]
+        elif self.a[0] > self.b[0]:
+            self[0] = self.r3[0]
+        else:
+            self[0] = self.r2[0]
 
 
 class If(Logic):

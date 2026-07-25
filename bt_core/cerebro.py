@@ -106,6 +106,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
 
         self.sizer = None
         self.pnc = None
+        self.store = None
         
         self.optcbs = list()  
         self.storecbs = list()
@@ -142,11 +143,11 @@ class Cerebro(with_metaclass(MetaParams, object)):
             corresponding ``data`` in the ``self.datas`` iterable (``0`` would
             use the timezone from ``data0``)
         '''
-        tz = self.p.tz
         if isinstance(tz, int):
             tz = self.datas[tz]._tz
-        else:
+        elif tz is not None:
             tz = timezone(tz)
+        self.p.tz = tz
 
     def _add_timer(self, when,
                    offset=timedelta(), repeat=timedelta(),
@@ -286,22 +287,22 @@ class Cerebro(with_metaclass(MetaParams, object)):
         if self._dt_over(dt0): # T + 1
             print("check timer on_dt_over: ", dt0)
             for strat in runstrats:
-                strat.on_dt_over(self.last_dts, dt0)
+                strat.on_dt_over(dt0, dt0)
 
     def _dispatch(self, runstrats: list, event_type: int, dt0: int):
             if event_type == TimerEvent.RISK: # risk control 
                 for strat in runstrats:
-                    strat.on_risk(self.last_dts) 
+                    strat.on_risk(dt0) 
 
             elif event_type == TimerEvent.TRADE:
                 print("entering on_trade")
                 for strat in runstrats:
-                    strat.on_trade(self.last_dts)
+                    strat.on_trade(dt0)
                 print("finish on_trade") 
 
             elif event_type == TimerEvent.METRIC: # log shm
                 for strat in runstrats:
-                    strat.notify_metrics(self.last_dts)
+                    strat.notify_metrics(dt0)
 
 # ------------------------------------------------------------------ data  --------------------------------------------------------------
 
@@ -377,7 +378,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
         Adds an `analyzer` class to the mix. Instantiation will be done at
         ``run`` time
         '''
-        self.analyzers.append((obscls, args, kwargs))
+        self.analyzers.append((ancls, args, kwargs))
 
     def signal_strategy(self, stratcls, *args, **kwargs):
         '''Adds a SignalStrategy subclass which can accept signals'''

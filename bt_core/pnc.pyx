@@ -146,7 +146,8 @@ cdef class Pnc:
             if self.sizer is not None:
                 s_wgt = self.sizer.getsizing(topk_info, snapshot, False)
 
-            for pos in positions:
+            for pos in positions:   
+                should_sell = False
                 c_sid = <cpp_string>pos.sid
 
                 if pos.available == 0 or self.pending_sells.find(c_sid) != self.pending_sells.end():
@@ -157,23 +158,16 @@ cdef class Pnc:
                 # ===============================================================================
                 days_held = self._get_days_held(<int32_t>pos.created_dt, current_day)
                 
-                if days_held < self.interval - 1:
-                    continue
-
-                should_sell = False
-           
-                # c_sid not topk and sell
-                if c_topk_info.find(c_sid) == c_topk_info.end():
+                if days_held >= self.interval:
                     should_sell = True
-                elif days_held >= self.interval - 1:
+           
+                # c_sid not topk
+                if c_topk_info.find(c_sid) == c_topk_info.end():
                     should_sell = True
 
                 if not should_sell:
                     continue
 
-                if c_topk_info.find(c_sid) != c_topk_info.end():
-                    continue
-           
                 it_wgt = s_wgt.find(c_sid)
                 wgt_ratio = deref(it_wgt).second if it_wgt != s_wgt.end() else 1.0
 

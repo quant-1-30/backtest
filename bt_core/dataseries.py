@@ -78,7 +78,7 @@ class OHLC(DataSeries):
 
 
 class OHLCDateTime(OHLC):
-    lines = (('datetime'),)
+    lines = ('datetime',)
 
 
 class _Bar(AutoOrderedDict):

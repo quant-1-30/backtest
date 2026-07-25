@@ -202,9 +202,8 @@ if __name__ == '__main__':
     # cerebro.add_signal(bt.SIGNAL_SHORT, SellSignal, ddata) 
     # cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal)
     
-    # add patchdata
-    from bt_core.feeds import SignalPatch
-
+    # add parquet
+    from bt_core.feeds import SignalPatch, ParquetPatch
     patch_data = SignalPatch(sid=b"300308")
     cerebro.adddata(patch_data)
 

@@ -168,7 +168,7 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
             return self.data._getnexteos()
 
         if not len(self):
-            return py_datetime.datetime.min, 0.0
+            return datetime.datetime.min, 0.0
 
         dt = self.lines.datetime[0]
         # dtime Asia/Shanghai
@@ -199,6 +199,7 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
                 line.apply_factor(factor)
                 line[0] = value / factor  # ensure current value not changed
 
+            # volume need reverse adjustment factor
             _v = self.volume[0]
             self.volume.apply_factor(1.0 / factor)
             self.volume[0] = _v * factor

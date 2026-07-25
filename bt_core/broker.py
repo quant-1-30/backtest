@@ -60,6 +60,7 @@ class BrokerBase(with_metaclass(MetaBroker, object)):
     '''
     params = (
         ("timeout", -1),
+        ("tdapi", None),
     )
     
     def _start(self):

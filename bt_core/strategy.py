@@ -296,12 +296,12 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         print(f"[Strategy] Trigger on {current_dts}")
 
         current_day = ts2intdt(current_dts)
-        topk = self.data[-1].get_topk(current_day)
+        topk = self.datas[-1].get_topk(current_day)
 
         snapshot = self.get_snapshot()
-        _plan = self.pnc.generate_plan(current_day, topk, snapshot) 
-        self.buy(_plan["sell"])
-        self.sell(_plan["buy"])
+        _plan = self.pnc.generate_plan(current_day, topk, snapshot)
+        self.sell(_plan[b"sell"])
+        self.buy(_plan[b"buy"])
 
     def buy(self, buys, execType=0):
         '''Create a buy (long) order and send it to the broker 
@@ -584,7 +584,7 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
         
         snapshot = self.get_snapshot()
 
-        _plan = self.pnc.generate_plan(current_dts, topk, snapshot)
+        _plan = self.pnc.generate_plan(current_day, topk, snapshot)
         print("generate_plan", _plan)
 
         if l_enter:

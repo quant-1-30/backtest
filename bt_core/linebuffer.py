@@ -262,8 +262,10 @@ class LineBuffer(LineSingle):
         self._cur_idx = self.idx % self.maxlen
 
         if self.mode == UnBounded: 
-            # array.array('d') 
-            self.array.append([size] * value)
+        #     # array.array('d') 
+        #     for _ in range(size):
+        #         self.array.append(value)
+            self.array.extend([value] * size) # self.array.extend(itertools.repeat(value, size))
 
         # self[0] = np.nan # no accurate size >= 1
 
