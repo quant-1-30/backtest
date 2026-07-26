@@ -12,6 +12,7 @@ cdef struct TraderPlan:
     int32_t size      
     int32_t priority
     int32_t execType 
+    cpp_string filler
 
 
 cdef class Pnc:
@@ -30,9 +31,9 @@ cdef class Pnc:
 
     cdef int32_t _get_days_held(self, int32_t created_day, int32_t current_day) noexcept nogil
     
-    cpdef vector[TraderPlan] on_risk(self, object snapshot, dict stats, int32_t execType=?)
+    cpdef vector[TraderPlan] on_risk(self, object snapshot, dict stats, int32_t execType=?, bytes filler=?)
     
-    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int32_t current_day, 
-                                                                        dict topk_info, object snapshot, int32_t execType=?) 
+    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int32_t current_day, dict topk_info, 
+                                                                        object snapshot, int32_t execType=?, bytes filler=?) 
 
     cpdef void on_execute(self, dict sell_trades)

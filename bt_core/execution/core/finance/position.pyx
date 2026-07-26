@@ -181,8 +181,8 @@ cdef class Position:
         cdef AssetCore asset_core = self.asset.core
 
         if asset_core.delist > 0 and asset_core.delist <= end_dt: # bug forward operation
-            if not asset_core.merger_sid.empty(): # length 
-                self._handle_merger(asset_core.merger_sid, close, asset_core.ratio)
+            if not asset_core.merger.empty(): # length 
+                self._handle_merger(asset_core.merger, close, asset_core.ratio)
             else:
                 self.core.size = 0
                 self.core.available = 0

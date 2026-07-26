@@ -22,7 +22,24 @@ from bt_protocol._protocol import SnapshotBody
 
 warnings.filterwarnings('ignore')
 
-os.environ["GRPC_POLL_STRATEGY"] = "poll"
+
+class FixedSize(bt.Sizer):
+    '''
+    This sizer simply returns a fixed size for any operation.
+    Size can be controlled by number of tranches that a system
+    wishes to use to scale into trades by specifying the ``tranches``
+    parameter.
+    '''
+    def __init__(self, *args, **kwargs):
+        self.stake = kwargs.get("stake", 1.0)
+
+    def _getsizing(self, topk_info: Dict[bytes, Any], snapshot: SnapshotBody, isbuy: bool):
+        if isbuy:
+            ratio = self.stake / len(topk_info)
+            _sizer = {sid: ratio for sid in topk_info.keys()}
+        else:
+            _sizer = {p.sid: 1.0 for p in snapshot.positions if p.size > 0}
+        return _sizer
 
 
 class WeekPriceSignal(btind.Indicator): 
@@ -132,39 +149,27 @@ class DrawDownSignal(btind.Indicator):
         self.lines.signal[0] = 0.0 if np.isnan(signal) else signal # np.nan_to_num(signal) used for array not scalar
 
 
-class TestStrategy(bt.Strategy):
+# class TestStrategy(bt.Strategy):
 
-    def log(self, txt, dt=None):
-        ''' Logging function for this strategy'''
-        dt = dt or self.datas[0].datetime.datetime()
-        print('%s, %s' % (dt.isoformat(), txt))
+#     def log(self, txt, dt=None):
+#         ''' Logging function for this strategy'''
+#         dt = dt or self.datas[0].datetime.datetime()
+#         print('%s, %s' % (dt.isoformat(), txt))
 
-    def __init__(self):
-        # Keep a reference to the "close" line in the data[0] dataseries
-        self.dataclose = self.datas[0].close
+#     def __init__(self):
+#         # Keep a reference to the "close" line in the data[0] dataseries
+#         self.dataclose = self.datas[0].close
 
-    def next(self):
-        # Simply log the closing price of the series from the reference
-        print('Close, %.2f' % self.dataclose[0])
+#     def next(self):
+#         # Simply log the closing price of the series from the reference
+#         print('Close, %.2f' % self.dataclose[0])
 
 
-class FixedSize(bt.Sizer):
-    '''
-    This sizer simply returns a fixed size for any operation.
-    Size can be controlled by number of tranches that a system
-    wishes to use to scale into trades by specifying the ``tranches``
-    parameter.
-    '''
-    def __init__(self, *args, **kwargs):
-        self.stake = kwargs.get("stake", 1.0)
+class TestSignalStrategy(bt.SignalStrategy):
 
-    def _getsizing(self, topk_info: Dict[bytes, Any], snapshot: SnapshotBody, isbuy: bool):
-        if isbuy:
-            ratio = self.stake / len(topk_info)
-            _sizer = {sid: ratio for sid in topk_info.keys()}
-        else:
-            _sizer = {p.sid: 1.0 for p in snapshot.positions if p.size > 0}
-        return _sizer
+    params = (
+        ('_accumulate', True),
+    )
 
 
 if __name__ == '__main__':
@@ -194,21 +199,23 @@ if __name__ == '__main__':
     # mdata = cerebro.resampledata(timeframe=bt.TimeFrame.Months, adjbartime=False, compression=1)
     # ydata = cerebro.resampledata(timeframe=bt.TimeFrame.Years, adjbartime=False, compression=1)
     
+    cerebro.add_signalStrategy(TestSignalStrategy)
+    
     # signal
-    # cerebro.add_signal(bt.SIGNAL_LONG, WeekPriceSignal, ddata, wdata)
-    # cerebro.add_signal(bt.SIGNAL_LONG_INV, DailyPriceSignal, ddata)
+    cerebro.add_signal(bt.SIGNAL_LONG, WeekPriceSignal, ddata, wdata)
+    cerebro.add_signal(bt.SIGNAL_LONG_INV, DailyPriceSignal, ddata)
     cerebro.add_signal(bt.SIGNAL_LONG, MACDSignal, ddata)
-    # cerebro.add_signal(bt.SIGNAL_LONG, VolSignal, ddata)
-    # cerebro.add_signal(bt.SIGNAL_SHORT, SellSignal, ddata) 
-    # cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal)
+    cerebro.add_signal(bt.SIGNAL_LONG, VolSignal, ddata)
+    cerebro.add_signal(bt.SIGNAL_SHORT, SellSignal, ddata) 
+    cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal)
     
     # add parquet
-    from bt_core.feeds import SignalPatch, ParquetPatch
+    from bt_core.feeds import SignalPatch
     patch_data = SignalPatch(sid=b"300308")
     cerebro.adddata(patch_data)
 
     try:
-        cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"], filler=b"default")
+        cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"])
     except Exception as e:
         print(f"运行报错: {e}")
         if hasattr(cerebro, '_shutdown'):

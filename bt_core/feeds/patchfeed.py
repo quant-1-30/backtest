@@ -1,4 +1,4 @@
-
+import os
 import numpy as np
 import polars as pl
 
@@ -30,7 +30,7 @@ class ParquetPatch(DataBase):
             # LazyFrame
             lazy_df = (
                 pl.scan_parquet(self.p.parquet_path)
-                .filter(pl.col("score") > 0.0)
+                .filter(pl.col("fsm_score") > 0.0)
                 .with_columns(
                     (pl.col("day").dt.year() * 10000 + 
                      pl.col("day").dt.month() * 100 + 
@@ -67,7 +67,6 @@ class ParquetPatch(DataBase):
     def stop(self):
         super().stop()
         self.global_scores.clear()
-
 
 
 class SignalPatch(DataBase):

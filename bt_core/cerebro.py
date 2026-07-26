@@ -366,21 +366,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
         '''
         self.strats.append([(strategy, args, kwargs)])
 
-    def addindicator(self, indcls, *args, **kwargs): # signal is indicator
-        '''
-        Adds an ``Indicator`` class to the mix. Instantiation will be done at
-        ``run`` time in the passed strategies
-        '''
-        self.indicators.append((indcls, args, kwargs))
-    
-    def addanalyzer(self, ancls, *args, **kwargs):
-        '''
-        Adds an `analyzer` class to the mix. Instantiation will be done at
-        ``run`` time
-        '''
-        self.analyzers.append((ancls, args, kwargs))
-
-    def signal_strategy(self, stratcls, *args, **kwargs):
+    def add_signalStrategy(self, stratcls, *args, **kwargs):
         '''Adds a SignalStrategy subclass which can accept signals'''
         self._signal_strat = (stratcls, args, kwargs)
 
@@ -394,6 +380,20 @@ class Cerebro(with_metaclass(MetaParams, object)):
         set to True, entering the market when already in the market, will be
         allowed to increase a position'''
         self._signal_accumulate = onoff
+
+    def addindicator(self, indcls, *args, **kwargs): # signal is indicator
+        '''
+        Adds an ``Indicator`` class to the mix. Instantiation will be done at
+        ``run`` time in the passed strategies
+        '''
+        self.indicators.append((indcls, args, kwargs))
+    
+    def addanalyzer(self, ancls, *args, **kwargs):
+        '''
+        Adds an `analyzer` class to the mix. Instantiation will be done at
+        ``run`` time
+        '''
+        self.analyzers.append((ancls, args, kwargs))
 
 # ------------------------------------------------------------------ callback --------------------------------------------------------------
 
@@ -490,9 +490,8 @@ class Cerebro(with_metaclass(MetaParams, object)):
                     pass  # Nothing there
                 else:
                     if not isinstance(signalst, SignalStrategy):
-                        # no signal ... reinsert at the beginning
-                        self.strats.insert(0, (signalst, sargs, skwargs))
-                        signalst = None  # flag as not presetn
+                        self.strats.insert(0, (signalst, sargs, skwargs)) # restore
+                        signalst = None  
 
             if not signalst:  # recheck
                 # Still None, create a default one

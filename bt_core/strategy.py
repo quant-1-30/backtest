@@ -102,9 +102,11 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
 
     _ltype = LineIterator.StratType
 
-    _filler = b"oco"
+    lines = ('datetime',)
 
-    lines = ('datetime',) 
+    params = (
+        ("tz", "utc"),
+    ) 
     
     def _settz(self, tz):
         self.lines.datetime._settz(tz)
@@ -177,8 +179,6 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
     
     def _start(self, savemem, **kwargs):
         '''Called right before the bt_coreing is about to be started.'''
-        self._filler = kwargs.get("filler", b"oco")
-
         # linebuffer qbuffer update maxlen with _minperiod
         self.qbuffer(savemem=savemem) 
         self._periodrecalc()
@@ -303,38 +303,43 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         self.sell(_plan[b"sell"])
         self.buy(_plan[b"buy"])
 
-    def buy(self, buys, execType=0):
+    def buy(self, buys):
         '''Create a buy (long) order and send it to the broker 
           
           - ``exectype`` (default: ``int``)
 
             Possible values:
 
-            - ``0 `` alias for Order.Market. An order will be executed
+            - ``0 `` alias for Order.Open. An order will be executed
               on created_dt 
 
-            - ``1 ``. alias for Order.Limit. An order be executed at the given
+            - ``1 ``. alias for Order.Market. An order be executed at the given
                 price`` or better. e.g.  oco / occ / smooth / trend
 
-            - ``2 ``. alias for Order.Stop is not supported by A stock 
+            - ``2 ``. alias for Order.Close is not supported by A stock 
 
-            - ``3``. alias for StopLimit is not supported by A stock  
+            - ``3``. alias for Order.Limit is not supported by A stock 
+
+            - ``4``. alias for Order.Stop is not supported by A stock
+
+            - ``5``. alias for Order.StopLimit is not supported by A stock  
+
+            - ``6``. alias for Order.StopTrail is not supported by A stock  
+
+            - ``7``. alias for Order.StopTrailLimit is not supported by A stock  
 
           - ``filler``: logic for simulate executed price on created_dt
             
             Possible values:
 
-            - ``oco``. An order which can only be executed on order created_dt 
+            - ``default``. An order which can only be executed on order created_dt 
                 where open price be cheated on
 
-            - ``occ``. An order which can only be executed on order created_dt
+            - ``vwap``. An order which can only be executed on order created_dt
                 where close price be cheated on
 
-            - ``smooth``. An order which can only be executed on order created_dt
+            - ``twap``. An order which can only be executed on order created_dt
                 where mean of ohlc
-
-            - ``likehood``. An order which can only be executed on order created_dt 
-                where high for buy order or low for sell order
 
           - ``**kwargs``: additional broker implementations may support extra
             parameters. ``backtrader`` will pass the *kwargs* down to the
@@ -358,7 +363,8 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
                         order_type=0,
                         exec_type=bplan["execType"], 
                         created_dt=int(created_dt),
-                        filler=self._filler)
+                        filler=bplan["filler"])
+            
             snapshot = self.store.submit(self.experiment_id, order)
             trades = snapshot.trades
             if trades:
@@ -394,7 +400,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
                         order_type=1,
                         exec_type=splan["execType"], 
                         created_dt=int(created_dt),
-                        filler=self._filler)
+                        filler=splan["filler"])
         
             snapshot = self.store.submit(self.experiment_id, order)
             trades = snapshot.trades
@@ -461,6 +467,8 @@ class MetaSigStrategy(Strategy.__class__): # Stragey元类 / obj.__class__ 类 /
 
         _obj._longexit = bool(_obj._signals[bt.SIGNAL_LONGEXIT])
         _obj._shortexit = bool(_obj._signals[bt.SIGNAL_SHORTEXIT])
+
+        _obj._accumulate = _accumulate = _obj.p._accumulate
         return _obj, args, kwargs
 
 
@@ -588,7 +596,7 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
         print("generate_plan", _plan)
 
         if l_enter:
-            if self.p._accumulate:
+            if self._accumulate:
                 self.buy(_plan[b"buy"])
         # elif l_exit or l_rev or l_leave:
         else:

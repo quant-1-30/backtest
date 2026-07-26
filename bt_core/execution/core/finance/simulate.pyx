@@ -236,7 +236,7 @@ cdef class TrackerActor:
         cdef bytes experiment_id = event.experiment_id
         cdef int32_t last_sync_dts = event.body.start_date
         cdef int32_t current_dts = event.body.end_date
-        cdef Position p_obj
+        cdef Position p_obj, exist_p
         
         cdef int32_t close_dt
         cdef int32_t total_size

@@ -57,7 +57,7 @@ cdef class Pnc:
     # risk control on tick
     # ==============================================================================================
     
-    cpdef vector[TraderPlan] on_risk(self, object snapshot, dict stats, int32_t execType=0):
+    cpdef vector[TraderPlan] on_risk(self, object snapshot, dict stats, int32_t execType=0, bytes filler=b"default"):
         cdef double pnl
         cdef TraderPlan tmp
         cdef double current_price
@@ -81,6 +81,7 @@ cdef class Pnc:
                     tmp.size = pos.available
                     tmp.priority = 0
                     tmp.execType = execType
+                    tmp.filler = filler
 
                     sells_by_risk.push_back(tmp)
 
@@ -105,6 +106,7 @@ cdef class Pnc:
         #         tmp.size = pos.available
         #         tmp.priority = 0
         #         tmp.execType = execType
+        #         tmp.filler = filler
         #         
         #         sells_by_risk.push_back(tmp) 
         #         self.pending_sells[py_sid] = tmp
@@ -115,7 +117,7 @@ cdef class Pnc:
     # generate execution plan
     # ================================================================================================
 
-    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int32_t current_day, dict topk_info, object snapshot, int32_t execType=0): 
+    cpdef unordered_map[cpp_string, vector[TraderPlan]] generate_plan(self, int32_t current_day, dict topk_info, object snapshot, int32_t execType=0, bytes filler=b"default"): 
             cdef bytes py_sid
             cdef cpp_string c_sid 
 
@@ -177,6 +179,7 @@ cdef class Pnc:
                 tmp.size = pos.available
                 tmp.priority = 1
                 tmp.execType = execType
+                tmp.filler = filler
 
                 sells.push_back(tmp) 
                 self.pending_sells[c_sid] = tmp  
@@ -234,6 +237,7 @@ cdef class Pnc:
                     tmp.size = 0
                     tmp.priority = buy_rank
                     tmp.execType = execType
+                    tmp.filler = filler
 
                     buys.push_back(tmp)
 
