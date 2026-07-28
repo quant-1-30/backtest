@@ -34,7 +34,8 @@ cdef class Position:
                 int32_t size=0, 
                 int32_t available=0, 
                 double cost_basis=0.0,
-                double pnl=0.0
+                double pnl=0.0,
+                double realized_pnl=0.0
                ):
         self.core.experiment_id = experiment_id
         self.core.sid = sid
@@ -44,7 +45,8 @@ cdef class Position:
         self.core.size = size
         self.core.available = available # due to T + 1
         self.core.cost_basis = cost_basis
-        self.core.pnl = pnl
+        self.core.pnl = pnl  # unrealized pnl
+        self.core.realized_pnl = realized_pnl
         
         self.asset = asset 
         self.cached_uuid = uuid.UUID(bytes=experiment_id)
@@ -56,38 +58,6 @@ cdef class Position:
         '''
         Updates the current position and returns the updated size, price and
         units used to open/close a position
-
-        Args:
-            size (int32_t): amount to update the position size
-                size < 0: A sell operation has taken place
-                size > 0: A buy operation has taken place
-
-            cost_basis (float):
-                Must always be positive to ensure consistency
-
-        Returns:
-            A tuple (non-named) contaning
-               size - new position size
-                   Simply the sum of the existing size plus the "size" argument
-               cost_basis - new position cost_basis
-                   If a position is increased the new average cost_basis will be
-                   returned
-                   If a position is reduced the cost_basis of the remaining size
-                   does not change
-                   If a position is closed the cost_basis is nullified
-                   If a position is reversed the cost_basis is the cost_basis given as
-                   argument
-               opened - amount of contracts from argument "size" that were used
-                   to open/increase a position.
-                   A position can be opened from 0 or can be a reversal.
-                   If a reversal is performed then opened is less than "size",
-                   because part of "size" will have been used to close the
-                   existing position
-               closed - amount of units from arguments "size" that were used to
-                   close/reduce a position
-
-            Both opened and closed carry the same sign as the "size" argument
-            because they refer to a part of the "size" argument
         '''
         cdef OrderExbitData core = orderbit.core
         cdef int32_t sign = 1 if core.isbuy else -1
@@ -99,8 +69,10 @@ cdef class Position:
         cdef int32_t available = self.core.available + size
 
         if available < 0:
-            print("not supported short order") 
-            return 
+            raise ValueError(
+                f"T+1 violation: available={self.core.available}, "
+                f"attempted size={size} on sid={self.core.sid}"
+            )
 
         self.core.size += size
 
@@ -117,7 +89,6 @@ cdef class Position:
             else : # decrease position under available
                 opened, closed = 0, size
                 self.core.available = available
-                self.core.cost_basis = cost_basis - (price - cost_basis) * size / self.core.size
         else:
             return
         
@@ -127,9 +98,17 @@ cdef class Position:
         cdef OrderExbitData trade_core = orderbit.core
         cdef double trade_price = trade_core.executed_price
         cdef int64_t trade_dts = trade_core.executed_dt
+        cdef int32_t trade_size = trade_core.executed_size
+        cdef double cost_basis = self.core.cost_basis
 
         self.core.datetime = trade_dts
-        self.core.pnl = self.core.size * (trade_price - self.core.cost_basis)
+        
+        # sells pnl
+        if not trade_core.isbuy:
+            self.core.realized_pnl += trade_size * (trade_price - cost_basis)
+        
+        # unrealized pnl
+        self.core.pnl = self.core.size * (trade_price - cost_basis)
  
     cdef double process_events(self, vector[EventItem]& events): # should update T datetime 
         cdef double total_bonus = 0.0
@@ -180,8 +159,8 @@ cdef class Position:
         cdef double cost_basis = self.core.cost_basis
         cdef AssetCore asset_core = self.asset.core
 
-        if asset_core.delist > 0 and asset_core.delist <= end_dt: # bug forward operation
-            if not asset_core.merger.empty(): # length 
+        if asset_core.delist > 0 and asset_core.delist <= end_dt:
+            if not asset_core.merger.empty():
                 self._handle_merger(asset_core.merger, close, asset_core.ratio)
             else:
                 self.core.size = 0
@@ -196,15 +175,13 @@ cdef class Position:
         self.core.datetime = end_dt
 
     cdef void on_dt_over(self, int32_t end_dt, double close):
-        # print("position on_dt_over: ", end_dt, close)
-        # sync size due to T + 1
         cdef int32_t size = self.core.size
         self.core.available = size
 
         self._dt_over(end_dt, close)
 
     cdef Position clone(self):
-        cdef Position obj = Position.__new__(Position) # only allocate memory
+        cdef Position obj = Position.__new__(Position)
         cdef PositionCoreData core 
 
         core.experiment_id = self.core.experiment_id
@@ -214,6 +191,7 @@ cdef class Position:
         core.size = self.core.size
         core.available = self.core.available
         core.pnl = self.core.pnl
+        core.realized_pnl = self.core.realized_pnl
         core.cost_basis = self.core.cost_basis
 
         obj.core = core
@@ -222,17 +200,19 @@ cdef class Position:
        
     cdef object serialize(self):
         cdef object body, resp
+        cdef double total_pnl = self.core.realized_pnl + self.core.pnl
         
         body = PositionBody(experiment_id=self.core.experiment_id, sid=self.core.sid, size=self.core.size, available=self.core.available,
-                            cost_basis=self.core.cost_basis, datetime=self.core.datetime, pnl=self.core.pnl, created_dt=self.core.created_dt)
+                            cost_basis=self.core.cost_basis, datetime=self.core.datetime, pnl=total_pnl, created_dt=self.core.created_dt)
         resp = Resp(body=body)
         return resp
 
     cdef object to_schema(self):
+        cdef double total_pnl = self.core.realized_pnl + self.core.pnl
 
         return vtPosition(experiment_id=self.cached_uuid, sid=self.core.sid, 
                         datetime=self.core.datetime, size=self.core.size, available=self.core.available,
-                        cost_basis=self.core.cost_basis, pnl=self.core.pnl, created_dt=self.core.created_dt)
+                        cost_basis=self.core.cost_basis, pnl=total_pnl, created_dt=self.core.created_dt)
 
     cdef PositionCoreData get_snapshot(self):
         return self.core
@@ -243,8 +223,10 @@ cdef class Position:
     def __bool__(self):
         return bool(self.core.size != 0)
 
-    def __reduce__(self): # sq same as __init__
-        return (Position, (self.core.experiment_id, self.core.sid, self.asset, self.core.datetime, self.core.size, self.core.available, self.core.cost_basis, self.core.pnl, self.core.created_dt))
+    def __reduce__(self):
+        return (Position, (self.core.experiment_id, self.core.sid, self.asset, 
+                        self.core.datetime, self.core.created_dt, self.core.size, 
+                        self.core.available, self.core.cost_basis, self.core.pnl, self.core.realized_pnl))
     
     def __repr__(self):
         template = "Position(experiment_id={experiment_id} ," \
@@ -255,17 +237,19 @@ cdef class Position:
                    "size={size} ," \
                    "available={available} ," \
                    "cost_basis={cost_basis} ," \
-                   "pnl={pnl})"
+                   "pnl={pnl} ," \
+                   "realized_pnl={realized_pnl})"
         formatted_asset_info = json.dumps(self.asset.core, ensure_ascii=False)
 
         return template.format(
             experiment_id=self.core.experiment_id,
             sid=self.core.sid,
-            asset=formatted_asset,
+            asset=formatted_asset_info,
             datetime=self.core.datetime,
             created_dt=self.core.created_dt,
             size=self.core.size,
             available=self.core.available,
             cost_basis=self.core.cost_basis,
-            pnl=self.core.pnl
+            pnl=self.core.pnl,
+            realized_pnl=self.core.realized_pnl
         )

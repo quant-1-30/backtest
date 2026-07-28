@@ -22,6 +22,12 @@ cdef class PseudoFiller:
     
     cdef (int32_t, double) _find_limit_execution(self, int32_t loc, double limit_price, bint is_buy, Lines lines)
 
+    cdef double _get_exec_price(self, Order order, Lines lines, int32_t loc)
+
+    cdef (int32_t, double) _fill(self, Order order, int32_t total_size, int32_t exec_loc,
+                                  int32_t req_size, bint is_buy, double order_price, Lines lines,
+                                  double cash)
+
     cdef void _execute(self, Order order, Position p_obj, double cash, Lines lines)
 
 

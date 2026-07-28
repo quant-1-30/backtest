@@ -113,6 +113,7 @@ class Calmar(bt.TimeFrameAnalyzerBase):
         # ==========================================
         total_ret = (curr_value / self._initial_value) - 1.0
         # (1 + 总收益) ^ (年化因子 / 总周期数) - 1
+        print("ann_ret", curr_value, self._initial_value, total_ret, self.tann, self._tcount)
         ann_ret = math.pow(1.0 + total_ret, self.tann / self._tcount) - 1.0
 
         # ==========================================

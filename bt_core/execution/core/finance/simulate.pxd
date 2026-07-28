@@ -15,7 +15,12 @@ cdef class TrackerActor:
     cdef AssetCache asset_cache  
     cdef BatchWriterActor _writer 
 
-    cdef object _put_buffer
+    cdef bint _snapshot_dirty 
+    cdef list _cached_pos_snaps
+    cdef list _cached_pobj_body
+    cdef set _dirty_pkeys
+
+    cdef list _put_buffer
     cdef object cached_uuid
     cdef object _latest_snapshot
     cdef object _loop

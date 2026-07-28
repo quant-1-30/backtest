@@ -28,7 +28,8 @@ cdef struct PositionCoreData:
     int32_t size
     int32_t available
     double cost_basis
-    double pnl
+    double pnl              # unrealized pnl = size * (price - cost_basis)
+    double realized_pnl     # accumulated realized pnl from sells
     int64_t created_dt
     
 

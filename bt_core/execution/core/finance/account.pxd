@@ -26,7 +26,7 @@ cdef class Account:
 
     cdef void update(self, list trades, double pnl)
     
-    cdef void sync(self, int64_t tick, dict p_obj)
+    cdef void sync(self, int64_t tick, dict pobjs, dict closes)
     
     cdef Account clone(self)
     

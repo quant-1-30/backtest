@@ -66,12 +66,12 @@ cdef class SyncCashManager:
         acct = self.get_account(experiment_id)
         acct.update(trades, pnl)
 
-    cdef void sync(self, bytes experiment_id, int64_t sync_tick, dict pobjs):
+    cdef void sync(self, bytes experiment_id, int64_t sync_tick, dict pobjs, dict closes):
         """sync account on_dt_over"""
         cdef Account acct
 
         acct = self.get_account(experiment_id)
-        acct.sync(sync_tick, pobjs)
+        acct.sync(sync_tick, pobjs, closes)
 
     cdef remove_client(self, bytes experiment_id):
         self.acct.pop(experiment_id, None)

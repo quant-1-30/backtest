@@ -58,6 +58,14 @@ cdef class TrackerActor:
         
         self._loop = _loop
         self._latest_snapshot = None 
+
+        # cache position snapshots
+        self._snapshot_dirty = True
+        self._cached_pos_snaps = []
+        self._cached_pobj_body = []
+
+        # clean tracking position which size=0
+        self._dirty_pkeys = set()
      
     async def _start(self):
         cdef bytes sid, experiment_id
@@ -77,7 +85,7 @@ cdef class TrackerActor:
                 asset_core = self.asset_cache.get_cache_info(sid, self._loop)
                 p_obj = Position(experiment_id = experiment_id,
                                 sid = sid,
-                                asset_core = asset_core,
+                                asset = asset_core,
                                 datetime = body.datetime,
                                 size = body.size,
                                 available = body.available,
@@ -88,6 +96,7 @@ cdef class TrackerActor:
             # print(f"TrackerActor _start positions: {self.positions}")
 
             await self.cash_manager._start()
+            self._snapshot_dirty = True
             self._create_snapshot(reason="_start")
 
         except Exception as e:
@@ -123,6 +132,7 @@ cdef class TrackerActor:
     cpdef object set_cash(self, object payload):
         """set cash and accout wrt"""
         self.cash_manager.set_cash(payload)
+        self._snapshot_dirty = True
         self._create_snapshot(reason="account_sync", writer=False)
         return Resp(body=self._latest_snapshot)
 
@@ -154,6 +164,10 @@ cdef class TrackerActor:
                 order_bits.append(ordbit.get_snapshot())
             self.cash_manager.update(experiment_id, order.exbits, p_sid.core.pnl) # avoid position update increment
 
+        # clean dirty positions 
+        if p_sid.core.size == 0:
+            self._dirty_pkeys.add(pkey)
+
         # order snapshot
         order_dict = order.get_snapshot() 
         order_dict['experiment_id'] = self.cached_uuid
@@ -162,6 +176,7 @@ cdef class TrackerActor:
         if order_bits:
             self._put_buffer.append({"order": [order_dict, order_bits]})
     
+        self._snapshot_dirty = True
         self._create_snapshot(reason="order_sync", writer=False, trades=order.serialize())
         self._check_flush()
         return Resp(body=self._latest_snapshot)
@@ -175,11 +190,21 @@ cdef class TrackerActor:
         cdef EventItem temp
         cdef int32_t int_sid
 
+        # pre-build sid decode cache to avoid repeated decode+int conversion
+        cdef dict sid_cache = {}
+        cdef bytes sid_bytes
+
+        for sid_bytes in py_adj_dfs.keys():
+            if sid_bytes not in sid_cache:
+                sid_cache[sid_bytes] = int(sid_bytes.decode('utf-8'))
+        for sid_bytes in py_rgt_dfs.keys():
+            if sid_bytes not in sid_cache:
+                sid_cache[sid_bytes] = int(sid_bytes.decode('utf-8'))
+
         for sid_bytes, py_adj_df in py_adj_dfs.items():
             if py_adj_df is not None and py_adj_df.height > 0:
+                int_sid = sid_cache[sid_bytes]
                 for bonus_share, transfer, bonus in py_adj_df.select(["bonus_share", "transfer", "bonus"]).rows():
-                    # int_sid = int(sid_bytes) # safely bytes "000001" -> int 1
-                    int_sid = int(sid_bytes.decode('utf-8')) 
                     cpp_adj_map[int_sid] = AdjustmentData(
                         bonus_share=float(bonus_share), 
                         transfer=float(transfer), 
@@ -188,17 +213,17 @@ cdef class TrackerActor:
 
         for sid_bytes, py_rgt_df in py_rgt_dfs.items():
             if py_rgt_df is not None and py_rgt_df.height > 0:
+                int_sid = sid_cache[sid_bytes]
                 for ratio, price in py_rgt_df.select(["ratio", "price"]).rows():
-                    # int_sid = int(sid_bytes) # safely bytes "000001" -> int 1
-                    int_sid = int(sid_bytes.decode('utf-8')) 
                     cpp_rgt_map[int_sid] = RightData(
                         ratio=float(ratio), 
                         price=float(price)
                     )
 
         for (_, sid_bytes), pos_obj in pobjs.items():
-            # int_sid = int(sid_bytes) # safely bytes "000001" -> int 1
-            int_sid = int(sid_bytes.decode('utf-8')) 
+            if sid_bytes not in sid_cache:
+                sid_cache[sid_bytes] = int(sid_bytes.decode('utf-8'))
+            int_sid = sid_cache[sid_bytes]
             v_events.clear() 
 
             adj_it = cpp_adj_map.find(int_sid) 
@@ -220,17 +245,19 @@ cdef class TrackerActor:
             self.cash_manager.add_cash(experiment_id, event_cash)
 
     cdef void _clean(self): # filter psize=0
-        cdef bytes sid
-        cdef Position p
         cdef tuple pkey
-        cdef list dead_pkeys =[]
+        cdef Position pos  
         
-        for pkey, p in self.positions.items():
-            if p.core.size == 0:
-                dead_pkeys.append(pkey)
-                
-        for pkey in dead_pkeys:
-            del self.positions[pkey]
+        if not self._dirty_pkeys:
+            return
+            
+        for pkey in self._dirty_pkeys:
+            if pkey in self.positions:
+                pos = <Position>self.positions[pkey]
+                if pos.core.size == 0:
+                    del self.positions[pkey]
+
+        self._dirty_pkeys.clear()
 
     async def on_dt_over(self, object event):
         cdef bytes experiment_id = event.experiment_id
@@ -241,22 +268,33 @@ cdef class TrackerActor:
         cdef int32_t close_dt
         cdef int32_t total_size
         cdef double close_price
-        cdef bytes sid_bytes
+        cdef bytes sid_bytes, map_sid
         
         cdef tuple p_key
-        cdef dict new_positions = {}
+        cdef dict new_positions = {}, closes_map = {}
         cdef set unique_sids_set = {sid_bytes for (eid, sid_bytes) in self.positions.keys() if eid == experiment_id}
 
         if not unique_sids_set:
-            self.cash_manager.sync(experiment_id, last_sync_dts, {})
+            self.cash_manager.sync(experiment_id, last_sync_dts, {}, {})
+            self._snapshot_dirty = True
             self._create_snapshot(reason="on_dt_over", writer=True)
             self._check_flush()
             return Resp(body=self._latest_snapshot)
-
+        
         closes_df_map, adjs_df_map, rgts_df_map = await self._fetch_from_rpc(last_sync_dts, current_dts, list(unique_sids_set))
+
+        # used to sync portfolio_value 
+        for map_sid in unique_sids_set:
+            close_df = closes_df_map.get(map_sid, None)
+            if close_df is not None and close_df.height > 0:
+                closes_map[map_sid] = close_df.select("close").row(-1)[0]
+            else:
+                closes_map[map_sid] = 0.0
 
         self._clean() # remove size=0
 
+        # track merger key changes for in-place update
+        cdef list merger_keys = []
         for (eid, sid_bytes), p_obj in self.positions.items():
             if eid == experiment_id:
                 close_df = closes_df_map.get(sid_bytes, None)
@@ -266,24 +304,30 @@ cdef class TrackerActor:
                 else: 
                     p_obj.on_dt_over(ts2intdt(last_sync_dts), 0.0)
 
-            # rebuild positions
-            p_key = (eid, p_obj.core.sid)
-            
-            if p_key in new_positions:
-                exist_p = new_positions[p_key]
+            # check if merger changed the sid
+            if p_obj.core.sid != sid_bytes:
+                merger_keys.append((eid, sid_bytes))
+
+        # handle merger key changes in-place
+        for old_key in merger_keys:
+            p_obj = self.positions.pop(old_key)
+            new_key = (old_key[0], p_obj.core.sid)
+            if new_key in self.positions:
+                exist_p = self.positions[new_key]
                 total_size = exist_p.core.size + p_obj.core.size
                 if total_size > 0:
                     exist_p.core.cost_basis = ((exist_p.core.cost_basis * exist_p.core.size) + 
                                                (p_obj.core.cost_basis * p_obj.core.size)) / total_size
+                else:
+                    exist_p.core.cost_basis = 0.0
                 exist_p.core.size = total_size
                 exist_p.core.available += p_obj.core.available
+                exist_p.core.pnl += p_obj.core.pnl
             else:
-                new_positions[p_key] = p_obj
-
-        self.positions = new_positions
+                self.positions[new_key] = p_obj
 
         # T-1 Sync 
-        self.cash_manager.sync(experiment_id, last_sync_dts, self.positions)
+        self.cash_manager.sync(experiment_id, last_sync_dts, self.positions, closes_map)
 
         # -------------------------------------------------------------
         # Sync T Event
@@ -291,6 +335,7 @@ cdef class TrackerActor:
         if current_dts >0:
             self._sync_event(experiment_id, self.positions, adjs_df_map, rgts_df_map)
 
+        self._snapshot_dirty = True
         self._create_snapshot(reason="dt_over", writer=True)
         self._check_flush()
         return Resp(body=self._latest_snapshot)
@@ -303,19 +348,27 @@ cdef class TrackerActor:
         cdef Position p_obj
         cdef dict p_dict
 
-        cdef list pos_snaps=[], pobj_body=[] 
-        
-        # position snapshot
-        for _, p_obj in self.positions.items():
-            if p_obj.core.size == 0:
-                continue
+        # only rebuild position snapshots when dirty
+        if self._snapshot_dirty or trades is not None:
+            pos_snaps = []
+            pobj_body = []
+            for _, p_obj in self.positions.items():
+                if p_obj.core.size == 0:
+                    continue
 
-            # struct auto dict
-            p_dict = p_obj.clone() .get_snapshot() # p.core 
-            p_dict['experiment_id'] = self.cached_uuid
+                p_dict = p_obj.clone().get_snapshot()
+                p_dict.pop("realized_pnl")
+                p_dict['experiment_id'] = self.cached_uuid
+                
+                pos_snaps.append(p_dict)
+                pobj_body.append(p_obj.serialize().body)
             
-            pos_snaps.append(p_dict)
-            pobj_body.append(p_obj.serialize().body)
+            self._cached_pos_snaps = pos_snaps
+            self._cached_pobj_body = pobj_body
+            self._snapshot_dirty = False
+        else:
+            pos_snaps = self._cached_pos_snaps
+            pobj_body = self._cached_pobj_body
             
         self._latest_snapshot = SnapshotBody(
             account=acct.serialize().body, 
@@ -383,7 +436,7 @@ cdef class Simulator:
         result = actor.process_order(order)
         return result
 
-    cpdef object on_dt_over(self, object event): # nonblocking
+    cpdef object on_dt_over(self, object event): # blocking - waits for coroutine completion
         cdef bytes experiment_id = event.experiment_id
         cdef TrackerActor actor = self._get_or_create_actor(experiment_id)
         

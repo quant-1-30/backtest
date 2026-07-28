@@ -83,12 +83,10 @@ cdef class Account:
             _comm += core.comm
             max_dt = max(core.executed_dt, max_dt)
         
-        self.core.portfolio_value += _val
         self.core.cash -= (_val + _comm) 
         self.core.datetime = max_dt
-        self.core.pnl += pnl
 
-    cdef void sync(self, int64_t tick, dict pobjs):
+    cdef void sync(self, int64_t tick, dict pobjs, dict closes):
         '''
         Updates the current position on Account
         '''
@@ -98,10 +96,13 @@ cdef class Account:
         cdef int64_t max_dt = max(self.core.datetime, tick)
         cdef Position p
 
-        # cdef pair[int, Position] item # pair ---> C++ for(auto& item : pobjs)
+        cdef double close
+        cdef bytes sid
         for p in pobjs.values():
-            _v += p.core.size * p.core.cost_basis + p.core.pnl
-            _pnl += p.core.pnl
+            sid = p.core.sid
+            close = closes.get(sid, 0.0)
+            _v += p.core.size * close
+            _pnl += p.core.pnl + p.core.realized_pnl
             max_dt = max(p.core.datetime, max_dt)
         
         self.core.portfolio_value = _v

@@ -10,25 +10,25 @@ cdef enum CommType:
 
 
 cdef class CommInfoBase:
-    # 成员变量声明
     cdef double commission
     cdef double creditrate
     cdef int32_t commtype
     cdef double fixed
     
-    # override Virtual-like
     cdef double calculate(self, Order order)
 
     cdef double getcommission(self, Order order, int32_t size, double price)
 
     cdef double get_credit_interest(self, Position pobj, int64_t dt)
 
+    cdef double get_comm_rate(self, Order order)
+
 
 cdef class CommInfo_Stocks(CommInfoBase):
     
-    cdef double calculate(self, Order order) # virtual
+    cdef double calculate(self, Order order)
 
 
 cdef class CommInfo_Futures(CommInfoBase):
 
-    cdef double calculate(self, Order order) # virtual
+    cdef double calculate(self, Order order)
