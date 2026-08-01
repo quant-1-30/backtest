@@ -140,3 +140,12 @@ class LocalStore(Store):
     def stop(self):
         '''Stops and tells the store to stop'''
         super().stop()
+
+        # Stop broker which calls tdapi.stop() -> engine.stop() -> simulator.shutdown() -> writer.stop()
+        # This already handles stopping the writer actor
+        if hasattr(self, 'broker') and self.broker is not None:
+            self.broker.stop()
+
+        # Stop AsyncRunner singleton to reset for next execution
+        if hasattr(self, '_runner') and self._runner is not None:
+            self._runner.stop()

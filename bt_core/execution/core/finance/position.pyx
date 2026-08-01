@@ -47,7 +47,8 @@ cdef class Position:
         self.core.cost_basis = cost_basis
         self.core.pnl = pnl  # unrealized pnl
         self.core.realized_pnl = realized_pnl
-        
+        self.core.pnl_ratio = 0.0
+
         self.asset = asset 
         self.cached_uuid = uuid.UUID(bytes=experiment_id)
     
@@ -106,9 +107,16 @@ cdef class Position:
         # sells pnl
         if not trade_core.isbuy:
             self.core.realized_pnl += trade_size * (trade_price - cost_basis)
-        
+
         # unrealized pnl
         self.core.pnl = self.core.size * (trade_price - cost_basis)
+
+        # update pnl_ratio = total_pnl / total_cost
+        cdef double total_cost = self.core.size * cost_basis
+        if total_cost > 0:
+            self.core.pnl_ratio = (self.core.pnl + self.core.realized_pnl) / total_cost
+        else:
+            self.core.pnl_ratio = 0.0
  
     cdef double process_events(self, vector[EventItem]& events): # should update T datetime 
         cdef double total_bonus = 0.0
@@ -170,8 +178,15 @@ cdef class Position:
         elif close > 0:
             self.core.pnl = size * (close - cost_basis)
         else:
-            pass # close == 0.0 means suspend stay
-        
+            pass # means suspend stay
+
+        # update pnl_ratio = total_pnl / total_cost
+        cdef double total_cost = self.core.size * self.core.cost_basis
+        if total_cost > 0:
+            self.core.pnl_ratio = (self.core.pnl + self.core.realized_pnl) / total_cost
+        else:
+            self.core.pnl_ratio = 0.0
+
         self.core.datetime = end_dt
 
     cdef void on_dt_over(self, int32_t end_dt, double close):
@@ -192,6 +207,7 @@ cdef class Position:
         core.available = self.core.available
         core.pnl = self.core.pnl
         core.realized_pnl = self.core.realized_pnl
+        core.pnl_ratio = self.core.pnl_ratio
         core.cost_basis = self.core.cost_basis
 
         obj.core = core
@@ -201,9 +217,10 @@ cdef class Position:
     cdef object serialize(self):
         cdef object body, resp
         cdef double total_pnl = self.core.realized_pnl + self.core.pnl
-        
-        body = PositionBody(experiment_id=self.core.experiment_id, sid=self.core.sid, size=self.core.size, available=self.core.available,
-                            cost_basis=self.core.cost_basis, datetime=self.core.datetime, pnl=total_pnl, created_dt=self.core.created_dt)
+
+        body = PositionBody(experiment_id=self.core.experiment_id, sid=self.core.sid, size=self.core.size, 
+                            available=self.core.available, cost_basis=self.core.cost_basis, datetime=self.core.datetime, 
+                            pnl=total_pnl, pnl_ratio=self.core.pnl_ratio, created_dt=self.core.created_dt)
         resp = Resp(body=body)
         return resp
 

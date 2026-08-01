@@ -356,19 +356,21 @@ cdef class TrackerActor:
                 if p_obj.core.size == 0:
                     continue
 
-                p_dict = p_obj.clone().get_snapshot()
-                p_dict.pop("realized_pnl")
-                p_dict['experiment_id'] = self.cached_uuid
-                
-                pos_snaps.append(p_dict)
                 pobj_body.append(p_obj.serialize().body)
+
+                # used dump to database
+                p_dict = p_obj.clone().get_snapshot()
+                p_dict['experiment_id'] = self.cached_uuid
+                p_dict.pop("realized_pnl")
+                p_dict.pop("pnl_ratio", None)
+                pos_snaps.append(p_dict)
             
-            self._cached_pos_snaps = pos_snaps
             self._cached_pobj_body = pobj_body
+            self._cached_pos_snaps = pos_snaps
             self._snapshot_dirty = False
         else:
-            pos_snaps = self._cached_pos_snaps
             pobj_body = self._cached_pobj_body
+            pos_snaps = self._cached_pos_snaps
             
         self._latest_snapshot = SnapshotBody(
             account=acct.serialize().body, 
@@ -455,5 +457,5 @@ cdef class Simulator:
             await actor.shutdown()
 
         logger.info("All TrackerActors stopped.")
-        await self._writer.wait_until_finished()
+        await self._writer.stop()
         logger.info("Simulator shutdown complete.")

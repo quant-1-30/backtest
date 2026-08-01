@@ -162,3 +162,12 @@ cdef class BatchWriterActor:
 
     async def wait_until_finished(self): # wait to exit from run
         await self._finished_event.wait()
+
+    async def stop(self):
+        """Stop the actor gracefully by sending sentinel and waiting for completion."""
+        self._running = False
+        # Send sentinel to trigger graceful shutdown
+        await self._queue.put([MsgType.Sentinel])
+        # Wait for run() to finish processing
+        await self._finished_event.wait()
+        logger.info("BatchWriterActor gracefully stopped.")

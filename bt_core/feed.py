@@ -95,7 +95,7 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
         ('compression', 1),
         ('tz', 'Asia/Shanghai'),
         ('tzinput', None),
-        ('sessionstart', datetime.time(8,30,0)), # asia
+        ('sessionstart', datetime.time(9,30,0)), # asia
         ('sessionend', datetime.time(14,59,0)), # asia
         ('calendar', None),
         ("timeout", -1),

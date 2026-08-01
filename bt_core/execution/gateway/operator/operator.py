@@ -58,15 +58,35 @@ class AsyncOps:
         self._initialized = False
         self.engine = None
         self._session_factory = None # singleton session cause bug when async
+        self._loop_id = None  # Track event loop to detect changes
 
     async def __aenter__(self):
         await self._ensure_initialized()
         return self
- 
+
     async def _ensure_initialized(self):
         """Helper method to ensure initialization"""
+        import asyncio
+        current_loop = asyncio.get_running_loop()
+        current_loop_id = id(current_loop)
+
+        # Reinitialize if event loop has changed (detects script restart in same terminal)
+        if self._loop_id is not None and self._loop_id != current_loop_id:
+            import logging
+            logging.warning(f"[AsyncOps] Event loop changed from {self._loop_id} to {current_loop_id}. Reinitializing...")
+            await self._reinitialize()
+
         if not self._initialized:
             await self.initialize()
+            self._loop_id = current_loop_id
+
+    async def _reinitialize(self):
+        """Reinitialize when event loop changes"""
+        if self.engine is not None:
+            await self.engine.dispose()
+        self._initialized = False
+        self._loop_id = None
+        await self.initialize()
 
     async def initialize(self):
         """Async initialization method"""

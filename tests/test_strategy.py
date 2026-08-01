@@ -180,17 +180,26 @@ if __name__ == '__main__':
     # store / size  / pnc
     cerebro.addstore("local")
     cerebro.addsizer(FixedSize)
-    cerebro.addpnc(Pnc, days_held=5, stake=0.9, dd=0.25)
+    cerebro.addpnc(Pnc, days_held=5, stake=0.9, dd=0.25, max_positions=5)
 
-    # timer
+    # RISK timer - max_positions 
+    cerebro.add_timer(
+        when=bt.timer.Session.SESSION_START,
+        offset=datetime.timedelta(minutes=0),  # 开盘时立即执行
+        weekdays=[1, 2, 3, 4, 5],
+        weekcarry=False,
+        event_type=bt.timer.TimerEvent.RISK
+    )
+
+    # TRADE timer - Plan
     cerebro.add_timer(
         # when=datetime.time(14, 50, 0),   
-        when=bt.timer.Session.SESSION_END,                  
-        offset=datetime.timedelta(minutes=-10),     
+        when=bt.timer.Session.SESSION_END,
+        offset=datetime.timedelta(minutes=-10),
         # repeat=datetime.timedelta(minutes=15), # intended for intraday
-        weekdays=[1, 2, 3, 4, 5],   
-        weekcarry=False,                            
-        event_type=bt.timer.TimerEvent.TRADE          
+        weekdays=[1, 2, 3, 4, 5],
+        weekcarry=False,
+        event_type=bt.timer.TimerEvent.TRADE
     )
 
     # resample 
@@ -214,9 +223,11 @@ if __name__ == '__main__':
     patch_data = SignalPatch(sid=b"300308")
     cerebro.adddata(patch_data)
 
-    try:
-        cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"])
-    except Exception as e:
-        print(f"运行报错: {e}")
-        if hasattr(cerebro, '_shutdown'):
-            cerebro._shutdown()
+    # try:
+    #     cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"])
+    # except Exception as e:
+    #     print(f"运行报错: {e}")
+    #     if hasattr(cerebro, '_shutdown'):
+    #         cerebro._shutdown()
+
+    cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"])
