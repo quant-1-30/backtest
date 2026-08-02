@@ -13,6 +13,7 @@ import weakref
 import contextlib
 import logging
 import time
+import signal
 import warnings
 import threading
 from functools import wraps
@@ -374,3 +375,19 @@ def ensure_upper_case(func, argname, arg):
                 arg,
             ),
         )
+
+def watchdog(seconds=600):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            def _handler(signum, frame):
+                raise TimeoutError(f"{func.__name__} exceeded {seconds}s")
+            old = signal.signal(signal.SIGALRM, _handler)
+            signal.alarm(seconds)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old)
+        return wrapper
+    return decorator

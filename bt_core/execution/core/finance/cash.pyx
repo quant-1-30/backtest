@@ -19,23 +19,23 @@ cdef class SyncCashManager:
     def __init__(self):
         self.acct = {}
 
-    async def _start(self):
+    async def _start(self, object experiment_id):
         cdef object row, body # resp
-        cdef bytes experiment_id
+        cdef bytes eid
         cdef list cash_data
         
-        cash_data = await async_gt.get_account()
+        cash_data = await async_gt.get_account(experiment_id)
         for row in cash_data: # row
             body = row.body
-            experiment_id = body.experiment_id
+            eid = body.experiment_id
 
-            self.acct[experiment_id] = Account(experiment_id=experiment_id,
-                                                datetime=body.datetime,
-                                                portfolio_value=body.portfolio_value,
-                                                cash=body.cash,
-                                                pnl=body.pnl,
-                                                leverage=body.leverage,
-                                                margin=body.margin)
+            self.acct[eid] = Account(experiment_id=eid,
+                                     datetime=body.datetime,
+                                     portfolio_value=body.portfolio_value,
+                                     cash=body.cash,
+                                     pnl=body.pnl,
+                                     leverage=body.leverage,
+                                     margin=body.margin)
 
     cdef Account get_account(self, bytes experiment_id):
         acct = self.acct.setdefault(experiment_id, Account(experiment_id=experiment_id))

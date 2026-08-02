@@ -44,7 +44,7 @@ cdef class AsyncGateway:
         resp = row[0].serialize()
         return resp
 
-    async def get_account(self):
+    async def get_account(self, object experiment_id):
         cdef object resp
         cdef list result = []
 
@@ -66,6 +66,7 @@ cdef class AsyncGateway:
                         order_by=vtAccount.datetime.desc()
                     ).label("rn")
                 )
+                .where(vtAccount.experiment_id == experiment_id)
             ).subquery() 
             # aliased subquery related to SQLAlchemy entity class and result is vtAccount object
             account_alias = aliased(vtAccount, sub_stmt) 
@@ -83,7 +84,7 @@ cdef class AsyncGateway:
                     result.append(resp)
         return result
 
-    async def get_position(self):
+    async def get_position(self, object experiment_id):
         cdef object resp
         cdef list result = []
 
@@ -96,6 +97,7 @@ cdef class AsyncGateway:
                         order_by=vtPosition.datetime.desc()
                     ).label("rn")
                 )
+                .where(vtPosition.experiment_id == experiment_id)
             ).subquery() 
             position_alias = aliased(vtPosition, sub_stmt)
 

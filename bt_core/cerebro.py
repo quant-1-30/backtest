@@ -34,7 +34,7 @@ from . import analyzers
 from .shm import LogRingBuffer
 from .utils.encoder import CustomJSONEncoder
 from .sink import LogConsumerThread
-from .utils.wrapper import consume_time
+from .utils.wrapper import consume_time, watchdog
 from .sizer import Sizer
 
 
@@ -439,6 +439,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
         self.cerebro_id = ','.join(extra_info)
 
     @consume_time
+    @watchdog(600)
     def run(self, **kwargs):
         '''The core method to perform bt_coreing. Any ``kwargs`` passed to it
         will affect the value of the standard parameters ``Cerebro`` was

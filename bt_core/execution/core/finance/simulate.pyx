@@ -75,7 +75,7 @@ cdef class TrackerActor:
         cdef object body, row # Resp
         
         try:
-            datas = await async_gt.get_position()
+            datas = await async_gt.get_position(self.cached_uuid)
             for row in datas:
                 body = row.body
                 sid = body.sid
@@ -98,7 +98,7 @@ cdef class TrackerActor:
                 self.positions[p_key] = p_obj # setdefault return default object
             # print(f"TrackerActor _start positions: {self.positions}")
 
-            await self.cash_manager._start()
+            await self.cash_manager._start(self.cached_uuid)
             self._snapshot_dirty = True
             self._create_snapshot(reason="_start")
 
