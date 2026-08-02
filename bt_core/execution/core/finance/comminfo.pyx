@@ -11,7 +11,10 @@ from bt_core.execution.core.finance.common cimport Exchange
 from bt_core.execution.core.finance.order cimport OrderCoreData
 from bt_core.execution.core.finance.position cimport PositionCoreData
 
-cdef const int64_t RatioCkpt = 1433813400 # 2015年 万分之5
+# A 股手续费时间分界点 (unix 秒)
+cdef const int64_t STAMP_TAX_CKPT = 1693180800     # 2023-08-28 印花税 1‰ -> 0.5‰
+cdef const int64_t TRANSFER_FEE_CKPT = 1651180800  # 2022-04-29 过户费沪深统一双向
+cdef const int64_t RatioCkpt = 1433813400          # 2015 佣金 3‰ -> 0.5‰ (万分之5)
 
 
 cdef class CommInfoBase:
@@ -60,27 +63,64 @@ cdef class CommInfo_Stocks(CommInfoBase):
 
     cdef double calculate(self, Order order):
         """
-            # 印花税 1‰(卖的时候才收取 全国统一)
-            # 过户费：深圳交易所无 / 上海交易所万分之1 买卖
-            # 交易佣金:最高收费为3‰ / 2015 5/10000
+            A 股手续费分项费率 均基于 size*price 计算:
+            # 印花税: 2023-08-28 前 1‰ 卖出, 之后 0.5‰ 卖出; 买入不收
+            # 过户费: 2022-04-29 前上交所 0.01‰ 买入, 沪深双向 0.01‰ 买卖
+            # 交易佣金: 2015 前3‰, 0.5‰
+            注意: 5 元最低红线仅适用于佣金, 不适用于印花税/过户费
         """
         cdef bint is_buy = order.isbuy
         cdef OrderCoreData core = order.core
 
-        stamp_commission = 0 if is_buy else 1e-3
-        transfer_commission = 1e-4 if order.exchange == Exchange.SSE else 0
-        trade_commission = 3e-3 if core.created_dt < RatioCkpt else 5e-4
+        # 1. 印花税
+        cdef double stamp_commission = 0.0
+        if not is_buy:
+            stamp_commission = 5e-4 if core.created_dt >= STAMP_TAX_CKPT else 1e-3
 
-        comm = stamp_commission + transfer_commission + trade_commission
-        return comm
+        # 2. 过户费
+        cdef double transfer_commission
+        if core.created_dt >= TRANSFER_FEE_CKPT:
+            transfer_commission = 1e-4  # 沪深双向
+        else:
+            transfer_commission = 1e-4 if order.exchange == Exchange.SSE else 0.0
+
+        # 3. 交易佣金
+        cdef double trade_commission = 3e-3 if core.created_dt < RatioCkpt else 5e-4
+
+        return stamp_commission + transfer_commission + trade_commission
 
     cdef double getcommission(self, Order order, int32_t size, double price):
-        cdef double comm_rate, comm
+        """
+            A 股手续费 = 印花税 + 过户费 + 佣金
+            其中佣金有 5 元最低红线, 印花税/过户费无最低门槛
+        """
+        cdef bint is_buy = order.isbuy
+        cdef OrderCoreData core = order.core
+        cdef double trade_value = abs(size) * price
+        cdef double stamp_tax = 0.0
+        cdef double stamp_rate
+        cdef double transfer_fee
+        cdef double comm_rate
+        cdef double commission
 
-        comm_rate = self.calculate(order)
-        comm = abs(size) * comm_rate * price
-        comm = comm if comm >5.0 else 5.0
-        return comm
+        # 1. 印花税 (仅卖出, 无最低门槛)
+        if not is_buy:
+            stamp_rate = 5e-4 if core.created_dt >= STAMP_TAX_CKPT else 1e-3
+            stamp_tax = trade_value * stamp_rate
+
+        # 2. 过户费 (双向, 无最低门槛)
+        if core.created_dt >= TRANSFER_FEE_CKPT:
+            transfer_fee = trade_value * 1e-4
+        else:
+            transfer_fee = trade_value * 1e-4 if order.exchange == Exchange.SSE else 0.0
+
+        # 3. 交易佣金 (5 元最低红线仅适用于佣金)
+        comm_rate = 3e-3 if core.created_dt < RatioCkpt else 5e-4
+        commission = trade_value * comm_rate
+        if commission < 5.0:
+            commission = 5.0
+
+        return stamp_tax + transfer_fee + commission
 
 
 cdef class CommInfo_Futures(CommInfoBase):

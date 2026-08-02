@@ -32,6 +32,9 @@ cdef inline cRatio calc_ratio(AdjustmentData dividend) nogil:
 
 cdef inline double calc_right(RightData rights) nogil:
     """
-        配股机制如果不缴纳款,自动放弃到期除权相当于亏损,在股权登记日卖出 一般的配股缴款起止日为5个交易日
+        配股缴款: 每股配股缴款 = 配股比例 * 配股价
+        返回每股应缴金额 (正数表示需缴款, 现金减少)
+        配股机制: ratio 为每股配股比例(如0.3表示10配3), price为配股价
     """
-    return 0.0
+    cdef double ratio_normalized = rights.ratio / 10.0
+    return ratio_normalized * rights.price

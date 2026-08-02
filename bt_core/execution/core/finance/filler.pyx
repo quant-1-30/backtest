@@ -144,10 +144,16 @@ cdef class PseudoFiller:
         for i in range(loc, n):
             if is_buy and lines.low[i] <= limit_price:
                 open_i = lines.open[i]
-                return i, limit_price if open_i > limit_price else open_i
+                # 买入限价单: 开盘价已高于限价时当日不会成交, 需等价格回落到限价
+                if open_i > limit_price:
+                    return i, limit_price
+                return i, open_i
             elif not is_buy and lines.high[i] >= limit_price:
                 open_i = lines.open[i]
-                return i, open_i if open_i > limit_price else limit_price
+                # 卖出限价单: 开盘价已低于限价时当日不会成交, 需等价格回升到限价
+                if open_i < limit_price:
+                    return i, limit_price
+                return i, open_i
         return -1, 0.0
 
     cdef double _get_exec_price(self, Order order, Lines lines, int32_t loc):

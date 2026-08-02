@@ -2,7 +2,9 @@
 # cython.wraparound(False)  # 关闭负指数索引检查
 # distutils: language = c++
 
-cdef const int64_t CYB_CKPT = 1598232600 
+from bt_core.utils.dateintern cimport ts2intdt
+
+cdef const int64_t CYB_CKPT = 1598232600
 
 
 cdef class Asset:
@@ -57,27 +59,36 @@ cdef class Asset:
             self.core.tick_size = 100
             self.core.increment = True
         else:
-            self.core.board = 0  # 默认主板
+            self.core.board = 0  # 60 / 0
             self.core.tick_size = 100
             self.core.increment = True
 
-    cdef double restricted(self, int64_t ts) noexcept nogil:
+    cdef double restricted(self, int64_t ts) noexcept:
         """
-            创业板2020年8月24日 20% 涨幅, 上市前五个交易日不设置涨跌幅
-            st: 科创板ST 为20%, 2020年8月24日创业板ST由5%变为20%
-            # 2026 年 7 月 6 日 A 股将实施新的交易规则‌主板 ST 股涨跌幅限制调整‌ 主板风险警示股票（ST、*ST）的涨跌幅限制由‌5%正式调整为10%‌与主板统一
-            注册制首五日 无限制
-            北交所 (4/8) 2021-11-15 30%
+            涨跌幅限制:
+            - 科创板(688)/创业板(3): 上市前5个交易日无涨跌幅限制, 之后20%
+            - 主板(60/00): 10%
+            - 创业板2020-08-24前为10%
         """
         cdef double thres
+        cdef bint is_new_stock
+        cdef int32_t current_ymd
 
-        if self.core.board == 2:
-            thres = 0.2
-        elif self.core.board == 1:
-            thres = 0.2 if ts >= CYB_CKPT else 0.1
-        elif self.core.board == 3:
-            return 0.3 if ts >= 20211115 else 0.1
+        if self.core.first_trading > 0:
+            current_ymd = <int32_t>ts2intdt(<double>ts)
+            is_new_stock = (current_ymd - self.core.first_trading) <=5 
         else:
+            is_new_stock = False
+
+        if self.core.board == 2:  
+            if is_new_stock:
+                return 1.0  
+            thres = 0.2
+        elif self.core.board == 1:  
+            if is_new_stock and ts >= CYB_CKPT:
+                return 1.0  
+            thres = 0.2 if ts >= CYB_CKPT else 0.1
+        else:  
             thres = 0.1
         return thres
 

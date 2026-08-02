@@ -102,8 +102,8 @@ class LocalStore(Store):
  
 # ------------------------------------------------------------------- broker api --------------------------------------------------------------------
 
-    def register(self, strategy: str, strat_info: str) -> bytes:
-        body = RegisterBody(strategy=strategy, extra_info=f"Strategy: {strat_info}", client_id=self.p.client_id)
+    def register(self, strategy: str, cerebro_info: str) -> bytes:
+        body = RegisterBody(strategy=strategy, extra_info=f"Strategy: {cerebro_info}", client_id=self.p.client_id)
         resp = self.broker.register(body)
         return resp
     

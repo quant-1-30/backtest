@@ -13,7 +13,7 @@ cdef struct AdjustmentData:
 
 
 cdef struct RightData:
-    double ratio
+    double ratio # not divide by 10
     double price
 
 

@@ -40,7 +40,7 @@ class MetaStore(MetaParams):
         _obj._orderspending = list()    
         _obj._tradespending = list() 
 
-        _obj._start(*args, **kwargs) 
+        _obj._start(*args, **kwargs) # auto start store when init 
         return _obj, args, kwargs
 
     def __call__(cls, *args, **kwargs):

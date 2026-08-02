@@ -34,6 +34,6 @@ cdef class Asset:
     cdef bytes sid
     cdef str name
 
-    cdef double restricted(self, int64_t ts) noexcept nogil
+    cdef double restricted(self, int64_t ts) noexcept
     
     cdef AssetCore serialize(self)

@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "bt_core"
-version = "0.4.8"
-description = "revise bug with glm5.2"
+version = "0.4.9"
+description = "revise TrackActor _start core and finance bug"
 authors = ["hengxin.liu <13776668123@163.com>"]
 readme = "README.md"
 build = "build_ext.py"
@@ -52,7 +52,7 @@ grpcio = "^1.78.0"
 protobuf = ">=5.29.0"
 build = "^1.5.0"
 poetry-core = "^2.4.0"
-bt-sdk = "0.14.9"
+bt-sdk = "0.15.0"
 
 [[tool.poetry.source]]
 name = "tuna"
@@ -62,7 +62,7 @@ priority = "primary"
 
 [[tool.poetry.source]]
 name = "local-hub"
-url = "http://localhost:3141/"
+url = "http://127.0.0.1:3141/"
 # optional: make this your default source for all installs
 priority = "supplemental"
 

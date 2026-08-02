@@ -168,6 +168,7 @@ class DrawDownSignal(btind.Indicator):
 class TestSignalStrategy(bt.SignalStrategy):
 
     params = (
+        ("name", "test_signal_strategy"),
         ('_accumulate', True),
     )
 
@@ -185,7 +186,7 @@ if __name__ == '__main__':
     # RISK timer - max_positions 
     cerebro.add_timer(
         when=bt.timer.Session.SESSION_START,
-        offset=datetime.timedelta(minutes=0),  # 开盘时立即执行
+        offset=datetime.timedelta(minutes=0),  
         weekdays=[1, 2, 3, 4, 5],
         weekcarry=False,
         event_type=bt.timer.TimerEvent.RISK

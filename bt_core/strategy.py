@@ -68,10 +68,14 @@ class MetaStrategy(StrategyBase.__class__):
 
         # register strategy to generate unique id and setup shm for strategy
         _obj.store = store = env.store
-        _obj.experiment_id = experiment_id = store.register(_obj.__class__.__name__, env.cerebro_id)
 
-        shm_name = hashlib.md5(experiment_id).hexdigest()[:24] # uuid.UUID(bytes=experiment_id) # file name 36 too long
+        _name = _obj.p._get("name", _obj.__class__.__name__)
+        experiment_id = store.register(_name, env.cerebro_id)
+
+        # uuid.UUID(bytes=experiment_id) # file_name <= 36
+        shm_name = hashlib.md5(experiment_id).hexdigest()[:24] 
         _obj.shm_chan = SharedRingBuffer(shm_name=str(shm_name), capacity=10000000, is_creator=True)
+        _obj.experiment_id = experiment_id
         return _obj, args, kwargs
 
     def dopreinit(cls, _obj, *args, **kwargs):

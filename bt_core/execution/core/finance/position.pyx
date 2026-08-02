@@ -6,6 +6,7 @@
 import uuid
 import json
 
+from libc.math cimport floor
 from bt_core.execution.core.finance.function cimport calc_ratio, cRatio
 from bt_core.execution.core.finance.trade cimport OrderExbitData
 
@@ -83,15 +84,20 @@ cdef class Position:
         elif not orig_size: # Update opened a position from 0 and available stay same
             opened, closed = size, 0
             self.core.cost_basis = price
-        elif orig_size > 0:  # existing "long" position
-            if size > 0:  # increased position
+        elif orig_size > 0:  
+            # existing "long" position 
+            if size > 0: 
+                # increased position  available no change and on_dt_over update
                 opened, closed = size, 0
                 self.core.cost_basis = (cost_basis * orig_size + size * price) / (orig_size + size)
             else : # decrease position under available
                 opened, closed = 0, size
                 self.core.available = available
         else:
-            return
+            raise ValueError(
+                f"Short position not supported for A-shares: orig_size={orig_size}, "
+                f"size={size} on sid={self.core.sid}"
+            )
         
         self._execute(orderbit) 
 
@@ -140,7 +146,8 @@ cdef class Position:
             sizer_ratio = cr.sizer_ratio
             bonus_ratio = cr.bonus_ratio
 
-            self.core.size = <int32_t>(origin_size * sizer_ratio)
+            # floor(x + 0.5) = round
+            self.core.size = <int32_t>floor(origin_size * sizer_ratio + 0.5)
             self.core.available = <int32_t>(available * sizer_ratio)
             self.core.cost_basis = cost_basis / sizer_ratio
             event_bonus = origin_size * bonus_ratio
@@ -149,17 +156,20 @@ cdef class Position:
             sizer_ratio = item.rgt.ratio / 10
             event_bonus = -(origin_size * sizer_ratio * item.rgt.price)
 
-            self.core.size = <int32_t>(origin_size * (1.0 + sizer_ratio))
+            self.core.size = <int32_t>floor(origin_size * (1.0 + sizer_ratio) + 0.5)
             self.core.available = available 
             self.core.cost_basis = (cost_basis + sizer_ratio * item.rgt.price) / (1.0 + sizer_ratio)
             return event_bonus
 
     cdef void _handle_merger(self, bytes target_sid, float close, float ratio):
         cdef int32_t size = self.core.size
+        cdef double old_cost = self.core.cost_basis
         cdef int32_t merger_size = <int32_t>(size * ratio)
         self.core.size = merger_size
         self.core.available = merger_size
-        self.core.cost_basis = close / ratio
+        if merger_size > 0:
+            # logic: amount keep same
+            self.core.cost_basis = old_cost * size / merger_size
         self.core.sid = target_sid
 
     cdef void _dt_over(self, int32_t end_dt, double close):
