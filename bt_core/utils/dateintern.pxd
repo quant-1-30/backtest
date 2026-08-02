@@ -1,7 +1,7 @@
 # distutils: language = c++
 # cython: language_level=3
 
-from libc.stdint cimport uint8_t, int64_t
+from libc.stdint cimport uint8_t, int32_t, int64_t
 from libc.time cimport time_t, localtime, mktime, tm, gmtime
 
 
@@ -39,7 +39,7 @@ cpdef object num2date(double ts, bint localize=?) # *
 
 cpdef double date2num(object dt)
 
-cpdef int64_t ts2intdt(double ts) # only cdef nogil and bint native=?
+cpdef int32_t ts2intdt(double ts) # only cdef nogil and bint native=?
 
 cpdef object tzparse(str tz)
 

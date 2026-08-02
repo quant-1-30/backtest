@@ -152,12 +152,13 @@ cdef class Position:
             self.core.cost_basis = cost_basis / sizer_ratio
             event_bonus = origin_size * bonus_ratio
             return event_bonus
-        else: 
+        else:
             sizer_ratio = item.rgt.ratio / 10
             event_bonus = -(origin_size * sizer_ratio * item.rgt.price)
 
             self.core.size = <int32_t>floor(origin_size * (1.0 + sizer_ratio) + 0.5)
-            self.core.available = available 
+            # right shares T + 1 available
+            self.core.available = available
             self.core.cost_basis = (cost_basis + sizer_ratio * item.rgt.price) / (1.0 + sizer_ratio)
             return event_bonus
 
@@ -181,6 +182,7 @@ cdef class Position:
             if not asset_core.merger.empty():
                 self._handle_merger(asset_core.merger, close, asset_core.ratio)
             else:
+                self.core.realized_pnl -= self.core.size * self.core.cost_basis
                 self.core.size = 0
                 self.core.available = 0
                 self.core.pnl = 0

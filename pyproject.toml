@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "bt_core"
-version = "0.4.9"
-description = "revise TrackActor _start core and finance bug"
+version = "0.5.0"
+description = "revise bug in pnc and position"
 authors = ["hengxin.liu <13776668123@163.com>"]
 readme = "README.md"
 build = "build_ext.py"

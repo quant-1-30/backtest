@@ -75,7 +75,7 @@ cdef class Asset:
         cdef int32_t current_ymd
 
         if self.core.first_trading > 0:
-            current_ymd = <int32_t>ts2intdt(<double>ts)
+            current_ymd = ts2intdt(<double>ts)
             is_new_stock = (current_ymd - self.core.first_trading) <=5 
         else:
             is_new_stock = False

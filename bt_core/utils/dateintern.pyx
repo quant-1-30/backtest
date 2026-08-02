@@ -63,7 +63,7 @@ cpdef double date2num(object dt):
     return dt.replace(tzinfo=SHANGHAI_TZ).timestamp()
 
 
-cpdef int64_t ts2intdt(double ts):  
+cpdef int32_t ts2intdt(double ts):  
     """
     param ts: UTC Timestamp
     """

@@ -8,6 +8,7 @@ from libcpp.algorithm cimport lower_bound, sort as c_sort
 from cython.operator cimport dereference as deref # C++ Map decref
 
 from bt_core.sizer cimport Sizer
+from bt_core.utils.dateintern import ts2intdt
 
 
 # ==============================================================================================
@@ -132,7 +133,7 @@ cdef class Pnc:
             for pos in positions:
                 pos_sid = <cpp_string>pos.sid
                 if pos.available > 0 and self.pending_sells.find(pos_sid) == self.pending_sells.end():
-                    days_held = self._get_days_held(<int32_t>pos.created_dt, current_day)
+                    days_held = self._get_days_held(ts2intdt(pos.created_dt), current_day)
                     # For on_risk, we don't have topk_info, so assume not in topk
                     in_topk = False
 
@@ -191,7 +192,7 @@ cdef class Pnc:
             for pos in positions:
                 c_sid = <cpp_string>pos.sid
 
-                if pos.available > 0:
+                if pos.available > 0 and self.pending_sells.find(c_sid) == self.pending_sells.end():
 
                     tmp.sid = c_sid
                     tmp.weight = 1.0
@@ -201,6 +202,7 @@ cdef class Pnc:
                     tmp.filler = filler
 
                     sells_by_risk.push_back(tmp)
+                    self.pending_sells[c_sid] = tmp
 
         return sells_by_risk
 
@@ -293,7 +295,7 @@ cdef class Pnc:
                 c_sid = <cpp_string>pos.sid
                 # Only include positions with available > 0 and not in pending_sells
                 if pos.available > 0 and self.pending_sells.find(c_sid) == self.pending_sells.end():
-                    days_held = self._get_days_held(<int32_t>pos.created_dt, current_day)
+                    days_held = self._get_days_held(<int32_t>ts2intdt(pos.created_dt), current_day)
                     in_topk = c_topk_info.find(c_sid) != c_topk_info.end()
 
                     p_pair.sid = c_sid
@@ -370,7 +372,7 @@ cdef class Pnc:
             # Normal sell logic: Check if we should initiate a new sell
             # ===============================================================================
             # HoldingDays check
-            days_held = self._get_days_held(<int32_t>pos.created_dt, current_day)
+            days_held = self._get_days_held(ts2intdt(pos.created_dt), current_day)
 
             if days_held >= self.interval:
                 should_sell = True
@@ -452,10 +454,11 @@ cdef class Pnc:
             if self.pending_sells.find(c_sid) != self.pending_sells.end():
                 continue
 
-            # Check if already held (only consider positions with available > 0)
+            # Check if already held (consider size > 0, not just available, to avoid
+            # duplicate buying of T+1 locked positions)
             already_held = False
             for pos in positions:
-                if <cpp_string>pos.sid == c_sid and pos.available > 0:
+                if <cpp_string>pos.sid == c_sid and pos.size > 0:
                     already_held = True
                     break
 
