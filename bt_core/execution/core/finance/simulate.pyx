@@ -82,7 +82,10 @@ cdef class TrackerActor:
                 experiment_id = body.experiment_id
                 p_key = (experiment_id, sid)
 
-                asset_core = self.asset_cache.get_cache_info(sid, self._loop)
+                # avoid in sync run_coroutine_threadsafe in async cause stuck
+                if sid not in self.asset_cache._c_cache:
+                    await self.asset_cache._async_fetch(sid)
+                asset_core = self.asset_cache._c_cache.get(sid, None)
                 p_obj = Position(experiment_id = experiment_id,
                                 sid = sid,
                                 asset = asset_core,

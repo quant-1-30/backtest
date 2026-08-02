@@ -287,7 +287,8 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
 
     def on_risk(self, current_dts: int): # position risk is not applied
         snapshot = self.get_snapshot()
-        sell_plans = self.pnc.on_risk(snapshot, self.stats)
+        current_day = ts2intdt(current_dts)
+        sell_plans = self.pnc.on_risk(snapshot, self.stats, current_day)
 
         if sell_plans:
             self.sell(sell_plans) 

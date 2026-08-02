@@ -91,4 +91,9 @@ if __name__ == '__main__':
 
     cerebro.addstrategy(FsmStrategy)
 
-    cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"])
+    try:
+        cerebro.run(cash=100000, sid=[b"300308"], fromdate=20040101, todate=20260531, benchmark=[b"1A0001"])
+    except Exception as e:
+        print(f"运行报错: {e}")
+        if hasattr(cerebro, '_shutdown'):
+            cerebro._shutdown()
