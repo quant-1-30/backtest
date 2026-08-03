@@ -128,6 +128,121 @@ self.core.size = <int32_t>floor(origin_size * (1.0 + sizer_ratio) + 0.5)
 
 ---
 
+## 第二轮审计（execution/core/finance + analyzers）
+
+第二轮对 `execution/core/finance`（account/simulate/filler）和 `analyzers/` 的复核结论：
+
+### 撤回的误报
+
+**误报 1：portfolio_value 不含 cash**
+- 经核对，`account.portfolio_value` 仅表示持仓市值是**设计如此**
+- 所有 analyzer 均正确使用 `portfolio_value + cash` 组合为总资产：
+  - `DrawDown/TimeReturn/Calmar/Sharpe/PeriodStats/SQN/Positions` → `acct.portfolio_value + acct.cash` ✅
+  - `PyFolio` 分别 publish `Portfolio` 与 `Cash` 两个独立 metric（导出器性质）✅
+- **不是 bug，撤回**
+
+**误报 2：filler 限价单方向反了**
+- `_find_limit_execution` 中 `open > limit_price` 时返回 `limit_price` 是**正确**的
+- A 股买入限价单语义：`limit_price` 是愿意支付的最高价
+  - 当 `low <= limit_price`（盘中曾达限价以下）且 `open > limit_price`（开盘超限价）
+  - → 盘中价格回落到限价时按 `limit_price` 成交
+- 注释"当日不会成交"措辞误导，但**代码逻辑正确**
+
+### 第二轮鲁棒性建议（非 bug，不强制修复）
+
+1. **`simulate.pyx` `_sync_event` 多日事件覆盖**：当前 query 为单日（start=end），rpc 返回单行不会触发；但 `cpp_adj_map[int_sid] = ...` 直接赋值在多行场景会覆盖。建议改为 `vector` 收集（**已在本次修复，见下方 P1-6**）。
+
+2. **`simulate.pyx` `_create_snapshot` 缓存**：当 `trades is not None` 时强制重建并写回缓存，下次无 trades 调用会用缓存。经分析缓存内容是最新状态，**逻辑正确**，无需修复。
+
+---
+
+### P1-6：`simulate.pyx` `_sync_event` 同 sid 多事件覆盖（已修复）
+
+**文件**：`bt_core/execution/core/finance/simulate.pyx` → `_sync_event()`
+
+**问题描述**：
+`cpp_adj_map[int_sid] = AdjustmentData(...)` 和 `cpp_rgt_map[int_sid] = RightData(...)` 对同一 sid 直接赋值。若同一只股票有多条除权/配股事件（rpc 返回多行），只保留最后一条，前面的被静默覆盖。
+
+`position.pyx` 的 `process_events` 已支持 `vector[EventItem]` 多事件顺序累积（`size *= sizer_ratio`、`cost_basis /= sizer_ratio` 逐条应用），业务语义支持多次事件累积，只是 `_sync_event` 收集时丢失了。
+
+**修复方案**：
+将 map 的 value 类型从单 struct 改为 `vector`，收集所有行，应用时遍历全部。共 4 处改动：
+
+**改动 1：变量声明（`_sync_event` 开头）**
+```cython
+# 修复前：单 struct 直接覆盖
+cdef unordered_map[int32_t, AdjustmentData] cpp_adj_map
+cdef unordered_map[int32_t, RightData] cpp_rgt_map
+
+# 修复后：vector 容器
+cdef unordered_map[int32_t, vector[AdjustmentData]] cpp_adj_map
+cdef unordered_map[int32_t, vector[RightData]] cpp_rgt_map
+```
+
+**改动 2：除权事件收集（`for sid_bytes, py_adj_df` 循环）**
+```cython
+# 修复前：直接赋值，多行覆盖只留最后一条
+cpp_adj_map[int_sid] = AdjustmentData(
+    bonus_share=float(bonus_share),
+    transfer=float(transfer),
+    bonus=float(bonus))
+
+# 修复后：push_back 保留所有行
+cpp_adj_map[int_sid].push_back(AdjustmentData(
+    bonus_share=float(bonus_share),
+    transfer=float(transfer),
+    bonus=float(bonus)))
+```
+
+**改动 3：配股事件收集（`for sid_bytes, py_rgt_df` 循环）**
+```cython
+# 修复前：直接赋值
+cpp_rgt_map[int_sid] = RightData(ratio=float(ratio), price=float(price))
+
+# 修复后：push_back
+cpp_rgt_map[int_sid].push_back(RightData(ratio=float(ratio), price=float(price)))
+```
+
+**改动 4：事件应用（`for (_, sid_bytes), pos_obj` 循环）**
+```cython
+# 修复前：只取单个 struct，最多触发一次 process_event
+adj_it = cpp_adj_map.find(int_sid)
+if adj_it != cpp_adj_map.end():
+    temp.event_type = 0
+    temp.adj = deref(adj_it).second   # 单值
+    v_events.push_back(temp)
+
+rgt_it = cpp_rgt_map.find(int_sid)
+if rgt_it != cpp_rgt_map.end():
+    temp.event_type = 1
+    temp.rgt = deref(rgt_it).second   # 单值
+    v_events.push_back(temp)
+
+# 修复后：遍历 vector 中所有事件，按顺序 push 到 v_events
+adj_it = cpp_adj_map.find(int_sid)
+if adj_it != cpp_adj_map.end():
+    for adj_data in deref(adj_it).second:   # 遍历全部
+        temp.event_type = 0
+        temp.adj = adj_data
+        v_events.push_back(temp)
+
+rgt_it = cpp_rgt_map.find(int_sid)
+if rgt_it != cpp_rgt_map.end():
+    for rgt_data in deref(rgt_it).second:   # 遍历全部
+        temp.event_type = 1
+        temp.rgt = rgt_data
+        v_events.push_back(temp)
+```
+
+**修复后效果**：
+`position.pyx` 的 `process_events(v_events)` 会按 vector 顺序逐条应用：
+- adj：`size *= sizer_ratio`，`cost_basis /= sizer_ratio`
+- rgt：`size *= (1 + sizer_ratio)`
+
+多次除权配股事件可正确累积，与 A 股真实业务语义一致。
+
+---
+
 ## 审计中确认正常的模块
 
 ### linebuffer / lineseries / indicator
@@ -161,3 +276,4 @@ self.core.size = <int32_t>floor(origin_size * (1.0 + sizer_ratio) + 0.5)
 |------|--------|
 | `bt_core/execution/core/finance/position.pyx` | P0-1 摘牌 realized_pnl、P2-5 配股 cdef |
 | `bt_core/pnc.pyx` | P0-2 drawdown pending、P0-3 created_dt 转换、P1-4 already_held |
+| `bt_core/execution/core/finance/simulate.pyx` | P1-6 _sync_event 多事件 vector 收集 |

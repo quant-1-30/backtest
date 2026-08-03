@@ -253,19 +253,19 @@ reference = "tuna"
 
 [[package]]
 name = "bt-protocol"
-version = "0.2.5"
-description = "update positionbody"
+version = "0.2.6"
+description = "revise core bug: relationship lazy=raise / selectin replace select"
 optional = false
 python-versions = ">=3.11,<3.14"
 files = [
-    {file = "bt_protocol-0.2.5-cp311-cp311-macosx_27_0_arm64.whl", hash = "sha256:347b2bdece841a67567b1486ff872c090114ea2393de3e9beb141b3705d47aaf"},
+    {file = "bt_protocol-0.2.6-cp311-cp311-macosx_27_0_arm64.whl", hash = "sha256:43fbb69a39222a42980f2825db71e6cfc43fc3ab93b85a1bd9d6f6f2cbc25550"},
 ]
 
 [package.dependencies]
 alembic = ">=1.15.1,<2.0.0"
 asyncpg = ">=0.31.0,<0.32.0"
 greenlet = ">=3.5.1,<4.0.0"
-grpcio = ">=1.71.0,<2.0.0"
+grpcio = ">=1.83.0,<2.0"
 msgspec = ">=0.18.6,<0.19.0"
 sqlalchemy = ">=2.0.47,<3.0.0"
 
@@ -276,17 +276,17 @@ reference = "local-hub"
 
 [[package]]
 name = "bt-sdk"
-version = "0.15.0"
-description = "revise signelton bug and other bugs with glm5.2"
+version = "0.15.1"
+description = "release gil in pybind11 and optimize async_client"
 optional = false
 python-versions = ">=3.11,<3.14"
 files = [
-    {file = "bt_sdk-0.15.0-cp311-cp311-macosx_27_0_arm64.whl", hash = "sha256:e90ea86dfee049d9f9f686cec4573471b81f0ed5cd09d3a066c2c4c68131c4c5"},
+    {file = "bt_sdk-0.15.1-cp311-cp311-macosx_27_0_arm64.whl", hash = "sha256:9d455faead59ed24d68b9e2250c1ea14c47b46e320917e43db3f25cf35e28e37"},
 ]
 
 [package.dependencies]
 annotated-types = ">=0.7.0,<0.8.0"
-bt-protocol = "0.2.5"
+bt-protocol = "0.2.6"
 build = ">=1.5.0,<2.0.0"
 cython = ">=3.2.3,<4.0.0"
 grpcio = ">=1.81.0"
@@ -5438,4 +5438,4 @@ reference = "tuna"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.14"
-content-hash = "08e30e5b31c0a0f7fb2fc68f1efaa76032de0887feb9e83a25e82458ce65fbc3"
+content-hash = "ece66134723a115d191b61fc0df8a39ec086ce699b1bc51265e970c2fc201edc"

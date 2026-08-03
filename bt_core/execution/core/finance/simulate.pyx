@@ -187,8 +187,8 @@ cdef class TrackerActor:
     cdef void _sync_event(self, bytes experiment_id, dict pobjs, dict py_adj_dfs, dict py_rgt_dfs):
         cdef double event_cash = 0.0
         cdef Position pos_obj  
-        cdef unordered_map[int32_t, AdjustmentData] cpp_adj_map 
-        cdef unordered_map[int32_t, RightData] cpp_rgt_map
+        cdef unordered_map[int32_t, vector[AdjustmentData]] cpp_adj_map
+        cdef unordered_map[int32_t, vector[RightData]] cpp_rgt_map
         cdef vector[EventItem] v_events
         cdef EventItem temp
         cdef int32_t int_sid
@@ -208,20 +208,20 @@ cdef class TrackerActor:
             if py_adj_df is not None and py_adj_df.height > 0:
                 int_sid = sid_cache[sid_bytes]
                 for bonus_share, transfer, bonus in py_adj_df.select(["bonus_share", "transfer", "bonus"]).rows():
-                    cpp_adj_map[int_sid] = AdjustmentData(
-                        bonus_share=float(bonus_share), 
-                        transfer=float(transfer), 
+                    cpp_adj_map[int_sid].push_back(AdjustmentData(
+                        bonus_share=float(bonus_share),
+                        transfer=float(transfer),
                         bonus=float(bonus)
-                    )
+                    ))
 
         for sid_bytes, py_rgt_df in py_rgt_dfs.items():
             if py_rgt_df is not None and py_rgt_df.height > 0:
                 int_sid = sid_cache[sid_bytes]
                 for ratio, price in py_rgt_df.select(["ratio", "price"]).rows():
-                    cpp_rgt_map[int_sid] = RightData(
-                        ratio=float(ratio), 
+                    cpp_rgt_map[int_sid].push_back(RightData(
+                        ratio=float(ratio),
                         price=float(price)
-                    )
+                    ))
 
         for (_, sid_bytes), pos_obj in pobjs.items():
             if sid_bytes not in sid_cache:
@@ -229,17 +229,19 @@ cdef class TrackerActor:
             int_sid = sid_cache[sid_bytes]
             v_events.clear() 
 
-            adj_it = cpp_adj_map.find(int_sid) 
+            adj_it = cpp_adj_map.find(int_sid)
             if adj_it != cpp_adj_map.end():
-                temp.event_type = 0
-                temp.adj = deref(adj_it).second 
-                v_events.push_back(temp)
+                for adj_data in deref(adj_it).second:
+                    temp.event_type = 0
+                    temp.adj = adj_data
+                    v_events.push_back(temp)
 
             rgt_it = cpp_rgt_map.find(int_sid)
             if rgt_it != cpp_rgt_map.end():
-                temp.event_type = 1
-                temp.rgt = deref(rgt_it).second 
-                v_events.push_back(temp)
+                for rgt_data in deref(rgt_it).second:
+                    temp.event_type = 1
+                    temp.rgt = rgt_data
+                    v_events.push_back(temp)
                 
             if not v_events.empty():
                 event_cash += pos_obj.process_events(v_events)
