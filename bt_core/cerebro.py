@@ -89,7 +89,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
         ("log_id", "cerebro"),
         ("capacity", 1000000),
         ("fmt", "parquet"),
-        ("output", None)
+        ("log_dir", None)
     )
 
     def __init__(self):
@@ -117,7 +117,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
         self.last_dts = 0 # np.iinfo(np.int_).max
 
         # logshm
-        output = self.p.output if self.p.output else str(Path.cwd() / "logs") # os.path.dirname(os.path.abspath(__file__))
+        output = self.p.log_dir if self.p.log_dir else str(Path.cwd() / "logs") # os.path.dirname(os.path.abspath(__file__))
         os.makedirs(output, exist_ok=True)
 
         self.log_shm = LogRingBuffer(shm_name="log_shm", capacity=self.p.capacity, is_creator=True)

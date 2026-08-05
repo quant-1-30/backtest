@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "bt_core"
-version = "0.5.0"
-description = "revise bug in pnc and position"
+version = "0.5.2"
+description = "revise protobuf version and test pdf plugin"
 authors = ["hengxin.liu <13776668123@163.com>"]
 readme = "README.md"
 build = "build_ext.py"
@@ -49,10 +49,10 @@ polars = "^1.39.0"
 sphinx = "<9.0"
 sphinx-rtd-theme = "^3.1.0"
 grpcio = "^1.78.0"
-protobuf = ">=5.29.0"
+protobuf = ">=7.35.1"
 build = "^1.5.0"
 poetry-core = "^2.4.0"
-bt-sdk = "0.15.1"
+bt-sdk = "0.15.2"
 
 [[tool.poetry.source]]
 name = "tuna"
