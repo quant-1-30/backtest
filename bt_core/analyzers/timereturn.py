@@ -104,12 +104,15 @@ class TimeReturn(bt.TimeFrameAnalyzerBase):
         self._prev_value = val
 
     def on_dt_over(self, dt0: int, snapshot: SnapshotBody):
-        # snapshot = self._owner.get_snapshot() 
         curr_value = snapshot.account.portfolio_value + snapshot.account.cash
         
         if self._initial_value <= 0:
+            nan = float('nan')
+            self.log_shm.publish_metric(b"DailyReturn", nan, dt0)
+            self.log_shm.publish_metric(b"CumReturn", nan, dt0)
+            self.log_shm.publish_metric(b"AnnualReturn", nan, dt0)
             return
-        
+
         self._tcount += 1
 
         # Daily Return
@@ -120,9 +123,12 @@ class TimeReturn(bt.TimeFrameAnalyzerBase):
         
         # --- Annualized Return ---
         if self._tcount > 0:
-            # (1 + total_ret) ^ (tann / tcount) - 1
-            # rnorm = math.expm1(ravg * tann) if ravg > float('-inf') else ravg
-            ann_ret = math.pow(1.0 + cum_ret, self.tann / self._tcount) - 1.0
+            # math.pow(negative number, non-integer) raises ValueError; handle loss scenarios where base <= 0
+            base = 1.0 + cum_ret
+            if base <= 0:
+                ann_ret = -1.0
+            else:
+                ann_ret = math.pow(base, self.tann / self._tcount) - 1.0
         else:
             ann_ret = 0.0
 
@@ -133,4 +139,4 @@ class TimeReturn(bt.TimeFrameAnalyzerBase):
         self._prev_value = curr_value
         
     def stop(self):
-        super(Returns, self).stop()
+        super(TimeReturn, self).stop()

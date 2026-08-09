@@ -81,12 +81,6 @@ class DrawDown(bt.TimeFrameAnalyzerBase):
         self.maxddlen = 0
 
     def on_dt_over(self, dt0: int, snapshot: SnapshotBody):
-        # events = self.get_shm_events() 
-        # accts = [act["data"] for act in events if act["type"] == "account"]
-        # acct = accts[-1]
-        # value = acct["portfolio_value"] + acct["cash"]
-        
-        # acct = self._owner.get_snapshot().account
         acct = snapshot.account
         value = acct.portfolio_value + acct.cash
 
@@ -102,12 +96,10 @@ class DrawDown(bt.TimeFrameAnalyzerBase):
         # update the maxdrawdown if needed
         self.maxdd = maxdd =  max(self.maxdd, self.dd)
         self.maxddlen = maxddlen = max(self.maxddlen, self.ddlen)
-        print(f"DrawDown on_dt_over: {dt0}, value {value}, peak {self.peak}, dd {self.dd}, ddlen {self.ddlen}, maxdd {maxdd}, maxddlen {maxddlen}")
-
-        self.log_shm.publish_metric(b"drawDown", self.dd, dt0)
-        self.log_shm.publish_metric(b"drawDownLength", self.ddlen, dt0)
-        self.log_shm.publish_metric(b"maxDrawdown", maxdd, dt0) 
-        self.log_shm.publish_metric(b"maxDrawdownLength", maxddlen, dt0) 
+        self.log_shm.publish_metric(b"DrawDown", self.dd, dt0)
+        self.log_shm.publish_metric(b"DrawDownLength", self.ddlen, dt0)
+        self.log_shm.publish_metric(b"MaxDrawdown", maxdd, dt0)
+        self.log_shm.publish_metric(b"MaxDrawdownLength", maxddlen, dt0)
 
     def stop(self):
-        super(AnnualReturn, self).stop()
+        super(DrawDown, self).stop()

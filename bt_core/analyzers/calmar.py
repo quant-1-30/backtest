@@ -95,6 +95,9 @@ class Calmar(bt.TimeFrameAnalyzerBase):
         curr_value = acct.portfolio_value + acct.cash
         
         if self._initial_value <= 0:
+            nan = float('nan')
+            self.log_shm.publish_metric(b"MaxDrawdown", nan, dt0)
+            self.log_shm.publish_metric(b"Calmar", nan, dt0)
             return
 
         self._tcount += 1
@@ -113,11 +116,15 @@ class Calmar(bt.TimeFrameAnalyzerBase):
         # ==========================================
         total_ret = (curr_value / self._initial_value) - 1.0
         # (1 + 总收益) ^ (年化因子 / 总周期数) - 1
-        print("ann_ret", curr_value, self._initial_value, total_ret, self.tann, self._tcount)
-        ann_ret = math.pow(1.0 + total_ret, self.tann / self._tcount) - 1.0
+        # math.pow(负数, 非整数) 会抛 ValueError；当亏损导致 base <= 0 时降级处理
+        base = 1.0 + total_ret
+        if base <= 0:
+            ann_ret = -1.0
+        else:
+            ann_ret = math.pow(base, self.tann / self._tcount) - 1.0
 
         # ==========================================
-        # 3. Calmar Ratio
+        # 3. Calmar Ratio = 年化收益率 / 最大回撤
         # ==========================================
         if self._max_dd > 0:
             calmar = ann_ret / self._max_dd

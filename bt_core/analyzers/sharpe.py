@@ -137,10 +137,10 @@ class SharpeRatio(bt.TimeFrameAnalyzerBase): # SharpeRatio(bt.Analyzer):
         self._last_value = acct.portfolio_value + acct.cash
 
     def on_dt_over(self, dt0: int, snapshot: SnapshotBody):
-        # acct = self._owner.get_snapshot().account
         acct = snapshot.account
         current_value = acct.portfolio_value + acct.cash
         
+        ratio = float('nan')
         if self._last_value > 0:
             # dret - driskfree
             period_ret = (current_value / self._last_value) - 1.0
@@ -158,7 +158,6 @@ class SharpeRatio(bt.TimeFrameAnalyzerBase): # SharpeRatio(bt.Analyzer):
                 if variance > 0:
                     ret_std = math.sqrt(variance)
                     ratio = (self._mean / ret_std) * self._annualize_factor
-                    
-                    self.log_shm.publish_metric(b"SharpeRatio", ratio, dt0)
 
+        self.log_shm.publish_metric(b"SharpeRatio", ratio, dt0)
         self._last_value = current_value
