@@ -76,25 +76,46 @@ class PeriodStats(bt.Analyzer):
         self.last_value = snap.account.portfolio_value + snap.account.cash
 
     def on_dt_over(self, dt0: int, snapshot: SnapshotBody):
-        # snapshot = self._owner.get_snapshot()
         current_value = snapshot.account.portfolio_value + snapshot.account.cash
         
         if self.last_value <= 0:
+            self._publish_nan(dt0)
+            self.last_value = current_value
             return
             
         ret = (current_value / self.last_value) - 1.0
         self.period_returns.append(ret)
         self.last_value = current_value
 
+        n = len(self.period_returns)
         avg_ret = np.mean(self.period_returns)
-        std_ret = np.std(self.period_returns)
+        
+        std_ret = np.std(self.period_returns, ddof=1) if n > 1 else float('nan')
+        best_ret = max(self.period_returns)
+        worst_ret = min(self.period_returns)
         
         pos_cnt = sum(1 for r in self.period_returns if r > 0.0)
         neg_cnt = sum(1 for r in self.period_returns if r < 0.0)
+        nochange_cnt = sum(1 for r in self.period_returns if r == 0.0)
         if self.p.zeroispos:
-            pos_cnt += sum(1 for r in self.period_returns if r == 0.0)
+            pos_cnt += nochange_cnt
 
-        self.log_shm.publish_metric(b"PeriodStats AvgRet", avg_ret, dt0)
-        self.log_shm.publish_metric(b"PeriodStats RetStd", std_ret, dt0)
-        self.log_shm.publish_metric(b"PeriodStats PosCnt", pos_cnt, dt0)
-        self.log_shm.publish_metric(b"PeriodStats NegCnt", neg_cnt, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsAvgRet", avg_ret, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsStd", std_ret, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsBest", best_ret, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsWorst", worst_ret, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsPosCnt", pos_cnt, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsNegCnt", neg_cnt, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsNoChangeCnt", nochange_cnt, dt0)
+
+    def _publish_nan(self, dt0: int):
+        """首日或数据不足时 publish NaN，保证每个 metric 每日都有行"""
+        nan = float('nan')
+        self.log_shm.publish_metric(b"PeriodStatsAvgRet", nan, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsStd", nan, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsBest", nan, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsWorst", nan, dt0)
+        # 计数类用 0 而非 NaN（无收益自然无正/负/平）
+        self.log_shm.publish_metric(b"PeriodStatsPosCnt", 0, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsNegCnt", 0, dt0)
+        self.log_shm.publish_metric(b"PeriodStatsNoChangeCnt", 0, dt0)

@@ -156,13 +156,13 @@ class PositionsAnalyzer(bt.TimeFrameAnalyzerBase):
                 self.cum_won += 1
 
             # --- days_held ---
-            duration_days = max(0, exit_dt - entry_dt) / 86400.0 
+            duration_days = max(0, exit_dt - entry_dt) / 86400.0
             total_hold_days += duration_days
 
         # calculate metrics
-        daily_win_rate = (daily_won / daily_closed) if daily_closed > 0 else 0.0
-        cum_win_rate = (self.cum_won / self.cum_closed) if self.cum_closed > 0 else 0.0
-        daily_avg_hold = (total_hold_days / daily_closed) if daily_closed > 0 else 0.0
+        daily_win_rate = (daily_won / daily_closed) if daily_closed > 0 else float('nan')
+        cum_win_rate = (self.cum_won / self.cum_closed) if self.cum_closed > 0 else float('nan')
+        daily_avg_hold = (total_hold_days / daily_closed) if daily_closed > 0 else float('nan')
         net_pnl = curr_value - self._initial_value
         n_trades = len(self._today_trades)
         

@@ -112,4 +112,4 @@ class Benchmark(bt.TimeFrameAnalyzerBase):
         self.log_shm.publish_metric(b"BenchmarkDret", loc_dret, dt0)
 
     def stop(self):
-        super(AnnualReturn, self).stop()
+        super(Benchmark, self).stop()

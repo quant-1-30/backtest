@@ -257,9 +257,14 @@ class Cerebro(with_metaclass(MetaParams, object)):
             tzdata=tzdata, *args, **kwargs)
  
     def _dt_over(self, dt0: int): # Timer(when=Session.SESSION_START, event_type=0)
+        # Skip NaN (dt0 != dt0) to avoid polluting last_dts and generating
+        # bogus 1970 timestamps in the log parquet via NaN -> int64(0) cast.
+        if dt0 != dt0:
+            return False
+
         isover = False
         if self.last_dts:
-            if dt0 - self.last_dts >= 12 * 3600: 
+            if dt0 - self.last_dts >= 12 * 3600:
                 # -Gap Detection to solve missing 14:59 / 9:31 ensure eod
                 print("check timer on_dt_over: ", dt0)
                 isover = True
@@ -275,7 +280,10 @@ class Cerebro(with_metaclass(MetaParams, object)):
         able to call the timer before. This value is the timer value and no the
         system time.
         '''
-        if not dt0:
+        # Skip NaN (dt0 != dt0) and zero timestamps. NaN is truthy in Python,
+        # so `not dt0` alone cannot intercept it. NaN -> int64 cast in Cython
+        # yields 0, which produces bogus 1970-01-01 rows in the log parquet.
+        if not dt0 or dt0 != dt0:
             return
 
         # ------------------------------ Scheduled Timers ----------------------------

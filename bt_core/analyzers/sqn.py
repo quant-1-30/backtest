@@ -166,12 +166,14 @@ class SQN(bt.TimeFrameAnalyzerBase):
             delta2 = realized_pnl - self._sqn_mean
             self._sqn_M2 += delta * delta2
 
+        sqn_score = float('nan')
         if self._sqn_n > 1:
             variance = self._sqn_M2 / (self._sqn_n - 1)
             if variance > 0:
                 std_pnl = math.sqrt(variance)
                 sqn_score = (math.sqrt(self._sqn_n) * self._sqn_mean) / std_pnl
-                self.log_shm.publish_metric(b"SQN", sqn_score, dt0)
+
+        self.log_shm.publish_metric(b"SQN", sqn_score, dt0)
 
         # reset on next day
         self._last_positions = current_positions

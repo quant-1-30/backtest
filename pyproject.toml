@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "bt_core"
-version = "0.5.2"
-description = "revise protobuf version and test pdf plugin"
+version = "0.5.3"
+description = "revise bug in analyzers"
 authors = ["hengxin.liu <13776668123@163.com>"]
 readme = "README.md"
 build = "build_ext.py"
