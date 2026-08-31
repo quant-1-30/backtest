@@ -93,12 +93,16 @@ cdef class AsyncGateway:
                 select(
                     vtPosition,
                     func.row_number().over(
-                        partition_by=vtPosition.experiment_id, 
+                        # partition per sid: one latest row PER position
+                        # (partitioning only by experiment_id after filtering
+                        # by it left rn==1 for a single sid -> position
+                        # restore silently dropped all but one holding)
+                        partition_by=(vtPosition.experiment_id, vtPosition.sid),
                         order_by=vtPosition.datetime.desc()
                     ).label("rn")
                 )
                 .where(vtPosition.experiment_id == experiment_id)
-            ).subquery() 
+            ).subquery()
             position_alias = aliased(vtPosition, sub_stmt)
 
             stmt = (

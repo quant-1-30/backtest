@@ -96,7 +96,7 @@ class Calmar(bt.TimeFrameAnalyzerBase):
         
         if self._initial_value <= 0:
             nan = float('nan')
-            self.log_shm.publish_metric(b"MaxDrawdown", nan, dt0)
+            self.log_shm.publish_metric(b"CalmarMaxDrawdown", nan, dt0)
             self.log_shm.publish_metric(b"Calmar", nan, dt0)
             return
 
@@ -131,6 +131,6 @@ class Calmar(bt.TimeFrameAnalyzerBase):
         else:
             calmar = 0.0
 
-        self.log_shm.publish_metric(b"MaxDrawdown", self._max_dd, dt0)
+        self.log_shm.publish_metric(b"CalmarMaxDrawdown", self._max_dd, dt0)
         self.log_shm.publish_metric(b"Calmar", calmar, dt0)
 

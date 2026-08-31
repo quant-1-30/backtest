@@ -256,7 +256,7 @@ class Cerebro(with_metaclass(MetaParams, object)):
             allow=allow,
             tzdata=tzdata, *args, **kwargs)
  
-    def _dt_over(self, dt0: int): # Timer(when=Session.SESSION_START, event_type=0)
+    def _dt_over(self, dt0: int) -> bool: # Timer(when=Session.SESSION_START, event_type=0)
         # Skip NaN (dt0 != dt0) to avoid polluting last_dts and generating
         # bogus 1970 timestamps in the log parquet via NaN -> int64(0) cast.
         if dt0 != dt0:
@@ -266,7 +266,6 @@ class Cerebro(with_metaclass(MetaParams, object)):
         if self.last_dts:
             if dt0 - self.last_dts >= 12 * 3600:
                 # -Gap Detection to solve missing 14:59 / 9:31 ensure eod
-                print("check timer on_dt_over: ", dt0)
                 isover = True
         self.last_dts = dt0
         return isover
@@ -286,16 +285,21 @@ class Cerebro(with_metaclass(MetaParams, object)):
         if not dt0 or dt0 != dt0:
             return
 
-        # ------------------------------ Scheduled Timers ----------------------------
-        for t in self._pretimers: 
-            if t.check(dt0):
-                print("check timer: ", dt0)
-                self._dispatch(runstrats, t.event_type, dt0)
-        
-        if self._dt_over(dt0): # T + 1
-            print("check timer on_dt_over: ", dt0)
+        # ------------------------------ Day Rollover (T+1) --------------------------
+        # Must run BEFORE the new day's scheduled timers: the simulator marks
+        # the portfolio at T-1 close and unlocks T+1 availability here, so a
+        # SESSION_START RISK timer sees up-to-date positions. prev_dts is the
+        # previous trading day (passing dt0 twice used to mark the book with
+        # the new day's own close -> look-ahead bias).
+        prev_dts = self.last_dts  # capture before _dt_over advances it
+        if self._dt_over(dt0):
             for strat in runstrats:
-                strat.on_dt_over(dt0, dt0)
+                strat.on_dt_over(prev_dts, dt0)
+
+        # ------------------------------ Scheduled Timers ----------------------------
+        for t in self._pretimers:
+            if t.check(dt0):
+                self._dispatch(runstrats, t.event_type, dt0)
 
     def _dispatch(self, runstrats: list, event_type: int, dt0: int):
             if event_type == TimerEvent.RISK: # risk control 
@@ -303,10 +307,8 @@ class Cerebro(with_metaclass(MetaParams, object)):
                     strat.on_risk(dt0) 
 
             elif event_type == TimerEvent.TRADE:
-                print("entering on_trade")
                 for strat in runstrats:
                     strat.on_trade(dt0)
-                print("finish on_trade") 
 
             elif event_type == TimerEvent.METRIC: # log shm
                 for strat in runstrats:

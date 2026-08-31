@@ -196,12 +196,6 @@ class LineRoot(with_metaclass(MetaLineRoot, object)):
     def __rmul__(self, other):
         return self._roperation(other, operator.__mul__)
 
-    def __div__(self, other):
-        return self._operation(other, operator.__div__)
-
-    def __rdiv__(self, other):
-        return self._roperation(other, operator.__div__)
-
     def __floordiv__(self, other):
         return self._operation(other, operator.__floordiv__)
 
@@ -259,7 +253,6 @@ class LineMultiple(LineRoot):
     Base class for LineXXX instances that hold more than one line
     '''
     def reset(self):
-        self._stage1()
         self.lines.reset()
 
     def addminperiod(self, minperiod):

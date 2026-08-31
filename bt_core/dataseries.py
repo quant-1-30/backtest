@@ -104,11 +104,15 @@ class _Bar(AutoOrderedDict):
 
     def bstart(self, maxdate=False):
         '''Initializes a bar to the default not-updated vaues'''
-        # Order is important: defined in DataSeries/OHLC/OHLCDateTime
-        self.close = float('NaN')
-        self.low = float('inf')
-        self.high = float('-inf')
+        # Order is important: must match the lines definition order in
+        # DataSeries/OHLC/OHLCDateTime ('open','high','low','close','volume',
+        # 'amount','datetime') because lvalues() returns insertion order and
+        # feed._fromstack zips it against the lines (a mismatch silently
+        # swaps open<->close and high<->low on every resampled bar)
         self.open = float('NaN')
+        self.high = float('-inf')
+        self.low = float('inf')
+        self.close = float('NaN')
         self.volume = 0.0
         self.amount = 0.0
         self.datetime = self.MAXDATE if maxdate else None

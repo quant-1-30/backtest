@@ -5,8 +5,11 @@ Created on Tue Mar 12 15:37:47 2019
 
 @author: python
 """
+import contextlib
+import threading
 from contextlib import ExitStack
 from contextlib import contextmanager
+from functools import wraps
 from warnings import (
     catch_warnings,
     filterwarnings,
@@ -21,20 +24,22 @@ class Context(contextlib.ContextDecorator):
         self.how_used = how_used
 
     def __enter__(self):
-        print(f'__enter__({self.how_used})')
+        # print(f'__enter__({self.how_used})')
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        print(f'__exit__({self.how_used})')
+        # print(f'__exit__({self.how_used})')
+        return None
 
 
 @contextlib.contextmanager
 def make_context():
-    print("enter make_context")
+    # print("enter make_context")
     try:
         yield {}
     except RuntimeError as err:
-        print(f"{err=}")
+        # print(f"{err=}")
+        pass
 
 
 class _ManagedCallbackContext(object):
@@ -143,7 +148,7 @@ def api_method(f):
     # setattr(zipline.api, f.__name__, wrapped)
     # zipline.api.__all__.append(f.__name__)
     # f.is_api_method = True
-    return f
+    return wrapped
 
 # with ExitStack() as stack:
 #     """

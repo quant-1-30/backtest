@@ -84,8 +84,9 @@ cdef class SharedRingBuffer: # SPMC
         for i in range(32):
             if not h.active_consumers[i]:
                 h.active_consumers[i] = True
-                # h.tails[i] = h.head # reset
-                h.tails[i] = 0
+                # start at current head: tail=0 would replay the entire ring
+                # (stale/garbage slots) to a late-registered consumer
+                h.tails[i] = h.head
                 return i
         raise RuntimeError("共享内存槽位已满")
 
@@ -242,11 +243,15 @@ cdef class SharedRingBuffer: # SPMC
      
     cpdef list drain_events(self, int32_t consumer_id):
         cdef RingHeader* h = self.header
+        if h == NULL:
+            return []  # already closed: avoid NULL deref
         cdef EventMsg* buf = self.buffer
         cdef EventMsg* msg
-        cdef int32_t event_tail, cap = self.header.capacity
-        cdef list events = []  
-        
+        # int64: total published events can exceed 2^31 over long runs
+        cdef int64_t event_tail
+        cdef int32_t cap = h.capacity
+        cdef list events = []
+
         cdef int32_t counter = 0
 
         while True:
@@ -355,6 +360,8 @@ cdef class LogRingBuffer: # MPSC
 
     cpdef object drain_metrics(self, int32_t batch=10000):
         cdef LogRingHeader* h = self.header
+        if h == NULL:
+            return np.array([])  # already closed: avoid NULL deref
         cdef int64_t current_tail = h.tail
         cdef int64_t current_head = h.head
         cdef MetricMsg* src = self.buffer

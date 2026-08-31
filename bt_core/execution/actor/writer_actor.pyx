@@ -122,7 +122,8 @@ cdef class BatchWriterActor:
         if not data:
             return
             
-        cdef int32_t, start, safe_size = 500 
+        cdef int32_t start
+        cdef int32_t safe_size = 500
         cdef list chunk
         
         for start in range(0, len(data), safe_size): # seq occupy one conn avoid gather tasks(cons)
@@ -165,8 +166,9 @@ cdef class BatchWriterActor:
 
     async def stop(self):
         """Stop the actor gracefully by sending sentinel and waiting for completion."""
-        self._running = False
-        # Send sentinel to trigger graceful shutdown
+        # do NOT clear _running before the sentinel: run() checks it after each
+        # item and would exit without draining the queue, silently dropping
+        # everything still queued (including the final flush from shutdown)
         await self._queue.put([MsgType.Sentinel])
         # Wait for run() to finish processing
         await self._finished_event.wait()

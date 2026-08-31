@@ -1,5 +1,5 @@
 import itertools
-import collections
+from collections.abc import Iterable
 
 
 def iterize(iterable):
@@ -10,7 +10,7 @@ def iterize(iterable):
     for elem in iterable:
         if isinstance(elem, str):
             elem = (elem,)
-        elif not isinstance(elem, collections.Iterable):  # Different functions will be called for different Python versions
+        elif not isinstance(elem, Iterable):  # collections.Iterable was removed in Python 3.10+
             elem = (elem,)
         niterable.append(elem)
     return niterable

@@ -105,27 +105,31 @@ cdef class TrackerActor:
         except Exception as e:
             logger.exception(f"Error starting position tracker: {e}")
 
-    async def _fetch_from_rpc(self, int32_t prev_dts, int32_t curr_dts, list psids): 
+    async def _fetch_from_rpc(self, int32_t prev_dts, int32_t curr_dts, list psids):
         """
         prev_dt: T-1 Close
         curr_dt: T   ex_dat Adj/Rgt
+        Events are fetched for the T-1, T ex-date range, not the exact day T:
+        through a suspension (no bars) the engine clock jumps T-1 -> T directly
+        and an ex-date inside the window (e.g. 300308 20160801, register frozen
+        20160729, dividend paid while halted) would otherwise never be fetched.
         """
         async def _fetch(object body, int32_t rpc_type):
-            df_dict = await async_gt.rpc(body, rpc_type) 
-            return df_dict 
+            df_dict = await async_gt.rpc(body, rpc_type)
+            return df_dict
 
         # 🌟 T-1 Close
         cdef int32_t last_dtint = ts2intdt(prev_dts)
         cdef int32_t curr_dtint = ts2intdt(curr_dts) if curr_dts > 0 else 0
 
-        close_body = QueryBody(start_date=last_dtint, end_date=last_dtint, sid=psids) 
+        close_body = QueryBody(start_date=last_dtint, end_date=last_dtint, sid=psids)
         close_task = asyncio.create_task(_fetch(close_body, RpcTopic.Close))
-        
+
         if curr_dtint == 0:
             closes_df_map = await close_task
             return closes_df_map, {}, {}
-            
-        event_body = QueryBody(start_date=curr_dtint, end_date=curr_dtint, sid=psids) 
+
+        event_body = QueryBody(start_date=last_dtint + 1, end_date=curr_dtint, sid=psids)
         adj_task = asyncio.create_task(_fetch(event_body, RpcTopic.Adjustment))
         rgt_task = asyncio.create_task(_fetch(event_body, RpcTopic.Rightment))
         
@@ -165,7 +169,7 @@ cdef class TrackerActor:
             for ordbit in order.exbits:
                 p_sid.update(ordbit)
                 order_bits.append(ordbit.get_snapshot())
-            self.cash_manager.update(experiment_id, order.exbits, p_sid.core.pnl) # avoid position update increment
+            self.cash_manager.update(experiment_id, order.exbits)
 
         # clean dirty positions 
         if p_sid.core.size == 0:
@@ -207,6 +211,8 @@ cdef class TrackerActor:
         for sid_bytes, py_adj_df in py_adj_dfs.items():
             if py_adj_df is not None and py_adj_df.height > 0:
                 int_sid = sid_cache[sid_bytes]
+                if "ex_date" in py_adj_df.columns:  # range fetch may return
+                    py_adj_df = py_adj_df.sort("ex_date")  # several events at once
                 for bonus_share, transfer, bonus in py_adj_df.select(["bonus_share", "transfer", "bonus"]).rows():
                     cpp_adj_map[int_sid].push_back(AdjustmentData(
                         bonus_share=float(bonus_share),
@@ -217,6 +223,8 @@ cdef class TrackerActor:
         for sid_bytes, py_rgt_df in py_rgt_dfs.items():
             if py_rgt_df is not None and py_rgt_df.height > 0:
                 int_sid = sid_cache[sid_bytes]
+                if "ex_date" in py_rgt_df.columns:  # keep event order stable
+                    py_rgt_df = py_rgt_df.sort("ex_date")
                 for ratio, price in py_rgt_df.select(["ratio", "price"]).rows():
                     cpp_rgt_map[int_sid].push_back(RightData(
                         ratio=float(ratio),
@@ -306,12 +314,12 @@ cdef class TrackerActor:
                 if close_df is not None and close_df.height > 0:
                     for day, close in close_df.select(["day", "close"]).rows():
                         p_obj.on_dt_over(int(day), float(close))
-                else: 
+                else:
                     p_obj.on_dt_over(ts2intdt(last_sync_dts), 0.0)
 
-            # check if merger changed the sid
-            if p_obj.core.sid != sid_bytes:
-                merger_keys.append((eid, sid_bytes))
+                # check if merger changed the sid (only this experiment's positions)
+                if p_obj.core.sid != sid_bytes:
+                    merger_keys.append((eid, sid_bytes))
 
         # handle merger key changes in-place
         for old_key in merger_keys:
@@ -321,13 +329,15 @@ cdef class TrackerActor:
                 exist_p = self.positions[new_key]
                 total_size = exist_p.core.size + p_obj.core.size
                 if total_size > 0:
-                    exist_p.core.cost_basis = ((exist_p.core.cost_basis * exist_p.core.size) + 
+                    exist_p.core.cost_basis = ((exist_p.core.cost_basis * exist_p.core.size) +
                                                (p_obj.core.cost_basis * p_obj.core.size)) / total_size
                 else:
                     exist_p.core.cost_basis = 0.0
                 exist_p.core.size = total_size
                 exist_p.core.available += p_obj.core.available
                 exist_p.core.pnl += p_obj.core.pnl
+                # keep realized pnl of the absorbed position, otherwise it is lost
+                exist_p.core.realized_pnl += p_obj.core.realized_pnl
             else:
                 self.positions[new_key] = p_obj
 

@@ -122,19 +122,13 @@ class AutoOrderedDict(OrderedDict):
         if type(self) != type(other):
             return type(other)() * other
 
-        return self + other
-
-    def __idiv__(self, other):
-        if type(self) != type(other):
-            return type(other)() // other
-
-        return self + other
+        return self * other
 
     def __itruediv__(self, other):
         if type(self) != type(other):
             return type(other)() / other
 
-        return self + other
+        return self / other
 
     def lvalues(self):
         # return py3lvalues(self)

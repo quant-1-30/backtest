@@ -57,17 +57,17 @@ class LocalStore(Store):
         ("client_id", b""),
     )
 
-    def __init__(self): 
+    def __init__(self):
         mdapi = get_md_api()
 
-        q_size = int(os.getenv("QSize")) 
-        batch_size = int(os.getenv("BatchSize"))
-        buffer_size = int(os.getenv("BufferSize"))
-        actor = BatchWriterActor(q_size=q_size, batch_size=batch_size) 
+        q_size = int(os.getenv("QSize", 1024))
+        batch_size = int(os.getenv("BatchSize", 1000))
+        buffer_size = int(os.getenv("BufferSize", 100))
+        actor = BatchWriterActor(q_size=q_size, batch_size=batch_size)
         tdapi = TdApi(client_id=self.p.client_id, q_size=q_size, buffer_size=buffer_size, actor=actor)
 
         self.actor = actor
-        self._feed = self.DataCls(mdapi=mdapi, timeout=self.p.timeout) 
+        self._feed = self.DataCls(mdapi=mdapi, timeout=self.p.timeout)
         self.broker = self.BrokerCls(tdapi=tdapi)
         self._runner = initialize_runner()
 
@@ -77,14 +77,9 @@ class LocalStore(Store):
 
         self._feed._prepare(_loop)
         self.broker._prepare(_loop)
-        
+
         # backgroud running writer actor
         _loop.create_task(self.actor.run())
-
-    def setenvironment(self, env):
-        '''Receives an environment (cerebro) and passes it over to the store it
-        belongs to'''
-        super(BTStore, self).setenvironment(env)
 
     def get_feed(self):
         '''Returns a feed with the given parameters'''
@@ -139,12 +134,10 @@ class LocalStore(Store):
     
     def stop(self):
         '''Stops and tells the store to stop'''
+        # Store.stop() already calls broker.stop() -> tdapi.stop() ->
+        # engine.stop() -> simulator.shutdown() -> writer.stop(); do not call
+        # broker.stop() twice (double shutdown of the writer actor)
         super().stop()
-
-        # Stop broker which calls tdapi.stop() -> engine.stop() -> simulator.shutdown() -> writer.stop()
-        # This already handles stopping the writer actor
-        if hasattr(self, 'broker') and self.broker is not None:
-            self.broker.stop()
 
         # Stop AsyncRunner singleton to reset for next execution
         if hasattr(self, '_runner') and self._runner is not None:

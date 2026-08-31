@@ -50,14 +50,14 @@ class MetaAbstractDataBase(OHLCDateTime.__class__):
             cls._indcol[name] = cls
         
     def dopreinit(cls, _obj, *args, **kwargs):
-        print("MetaAbstractDataBase dopreinit", kwargs)
+        # print("MetaAbstractDataBase dopreinit", kwargs)  # 泄露策略参数, 勿启用
         _obj, args, kwargs = \
             super(MetaAbstractDataBase, cls).dopreinit(_obj, *args, **kwargs)
 
         return _obj, args, kwargs
 
     def dopostinit(cls, _obj, *args, **kwargs):
-        print("MetaAbstractDataBase dopostinit", kwargs)
+        # print("MetaAbstractDataBase dopostinit", kwargs)  # 泄露策略参数, 勿启用
         _obj, args, kwargs = \
             super(MetaAbstractDataBase, cls).dopostinit(_obj, *args, **kwargs)
 
@@ -83,7 +83,7 @@ class MetaAbstractDataBase(OHLCDateTime.__class__):
         _obj.adj_factors = {} 
         _obj.record_dt = 0
         _obj.log_shm = None
-        print("MetaAbstractDataBase dopostinit finish ")
+        # print("MetaAbstractDataBase dopostinit finish ")
         return _obj, args, kwargs
 
 
@@ -185,26 +185,43 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
     def apply_factor(self):
         """
             ohlc accumulated factors
+
+            契约: self.adj_factors 的 value 必须是每个 ex-date 的【单次事件】比率
+            (rpcfeed.get_adjfactor 取 FactorResult.raw_factors, 实测 {ex: r}, 与
+            bt_sdk 的累计系数 adj_factors 是两回事)。逐事件连乘整个 buffer 后,
+            era-j 历史 bar 的累计乘数 = prod(r_k, k>j), 恰等于 bt_sdk join_asof
+            用累计系数 adj_factors[dt_{j+1}] 一次性乘的结果 —— 两者数学等价。
         """
         if not self.adj_factors:
             return
 
         current_dt = ts2intdt(self.lines.datetime[0])
-        if current_dt in self.adj_factors and current_dt != self.record_dt:
-            factor = self.adj_factors[current_dt]
-        
-            adjlines = {name: getattr(self, name) for name in ["open", "high", "close", "low"]}
-            for line in adjlines.values():
-                value = line[0]
-                line.apply_factor(factor)
-                line[0] = value / factor  # ensure current value not changed
+        # every ex-date that has come due since the last applied one. Exact-day
+        # matching (`current_dt in self.adj_factors`) drops factors whose
+        # ex-date falls inside a no-bar window (suspension): the first bar
+        # after the gap must back-adjust history instead, compounding when
+        # several ex-dates became due together. The current bar is kept raw —
+        # it already trades post-adjustment.
+        due = [dt for dt in self.adj_factors if self.record_dt < dt <= current_dt]
+        if not due:
+            return
 
-            # volume need reverse adjustment factor
-            _v = self.volume[0]
-            self.volume.apply_factor(1.0 / factor)
-            self.volume[0] = _v * factor
+        factor = 1.0
+        for dt in due:
+            factor *= self.adj_factors[dt]
 
-            self.record_dt = current_dt 
+        adjlines = {name: getattr(self, name) for name in ["open", "high", "close", "low"]}
+        for line in adjlines.values():
+            value = line[0]
+            line.apply_factor(factor)
+            line[0] = value  # ex-date bar arrives already adjusted: keep raw value
+
+        # volume need reverse adjustment factor
+        _v = self.volume[0]
+        self.volume.apply_factor(1.0 / factor)
+        self.volume[0] = _v
+
+        self.record_dt = due[-1]
 
     def _load(self):
         return False
@@ -286,8 +303,12 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
                 if ticks:
                     self._tick_fill()
  
-        if len(self) >= self.buflen(): # consume > buffer size
-            self.apply_factor()
+        # unconditional: with the old `len(self) >= self.buflen()` guard an
+        # ex-date landing inside the warmup window (first maxlen bars) was
+        # silently dropped — record_dt never advanced past it and the factor
+        # was never applied. QBuffer nan padding is factor-invariant, so
+        # applying during warmup is safe.
+        self.apply_factor()
 
         return True
     
@@ -333,7 +354,7 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
             self._barstash.append(bar)
 
         if erase:  # remove bar if requested
-            self.backwards(force=force)
+            self.backwards()
 
     def _updatebar(self, bar, forward=False, ago=0):
         '''Load a value from the stack onto the lines to form the new bar

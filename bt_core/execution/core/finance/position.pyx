@@ -50,7 +50,7 @@ cdef class Position:
         self.core.realized_pnl = realized_pnl
         self.core.pnl_ratio = 0.0
 
-        self.asset = asset 
+        self.asset = asset
         self.cached_uuid = uuid.UUID(bytes=experiment_id)
     
     cdef int32_t get_available(self):
@@ -78,15 +78,15 @@ cdef class Position:
 
         self.core.size += size
 
-        if not self.core.size: # Update closed existing position 
+        if not self.core.size: # Update closed existing position
             opened, closed = 0, size
             self.core.available = 0
         elif not orig_size: # Update opened a position from 0 and available stay same
             opened, closed = size, 0
             self.core.cost_basis = price
-        elif orig_size > 0:  
-            # existing "long" position 
-            if size > 0: 
+        elif orig_size > 0:
+            # existing "long" position
+            if size > 0:
                 # increased position  available no change and on_dt_over update
                 opened, closed = size, 0
                 self.core.cost_basis = (cost_basis * orig_size + size * price) / (orig_size + size)
@@ -98,8 +98,8 @@ cdef class Position:
                 f"Short position not supported for A-shares: orig_size={orig_size}, "
                 f"size={size} on sid={self.core.sid}"
             )
-        
-        self._execute(orderbit) 
+
+        self._execute(orderbit)
 
     cdef _execute(self, OrderExecutionBit orderbit):
         cdef OrderExbitData trade_core = orderbit.core
@@ -108,6 +108,8 @@ cdef class Position:
         cdef int32_t trade_size = trade_core.executed_size
         cdef double cost_basis = self.core.cost_basis
 
+        # keep unix ts: multiple fills within a day must stay strictly ordered;
+        # ymd normalization happens once at settlement (on_dt_over / Account.sync)
         self.core.datetime = trade_dts
         
         # sells pnl
@@ -140,26 +142,30 @@ cdef class Position:
         cdef double sizer_ratio , bonus_ratio
         cdef double cost_basis = self.core.cost_basis
         cdef int32_t origin_size = self.core.size, available = self.core.available
-        
+        cdef int32_t rights_size
+
         if item.event_type == 0:  # adjustment
             cr = calc_ratio(item.adj)
             sizer_ratio = cr.sizer_ratio
             bonus_ratio = cr.bonus_ratio
 
-            # floor(x + 0.5) = round
-            self.core.size = <int32_t>floor(origin_size * sizer_ratio + 0.5)
-            self.core.available = <int32_t>(available * sizer_ratio)
+            # drop less > 1.0 and available <= size 
+            self.core.size = <int32_t>floor(origin_size * sizer_ratio)
+            self.core.available = <int32_t>floor(available * sizer_ratio)
             self.core.cost_basis = cost_basis / sizer_ratio
             event_bonus = origin_size * bonus_ratio
             return event_bonus
         else:
-            sizer_ratio = item.rgt.ratio / 10
-            event_bonus = -(origin_size * sizer_ratio * item.rgt.price)
+            # rights shares are integral: subscribe exactly the granted shares
+            # and pay cash only for the shares actually received
+            rights_size = <int32_t>floor(origin_size * item.rgt.ratio / 10.0)
+            event_bonus = -(rights_size * item.rgt.price)
 
-            self.core.size = <int32_t>floor(origin_size * (1.0 + sizer_ratio) + 0.5)
+            self.core.size = origin_size + rights_size
             # right shares T + 1 available
             self.core.available = available
-            self.core.cost_basis = (cost_basis + sizer_ratio * item.rgt.price) / (1.0 + sizer_ratio)
+            if self.core.size > 0:
+                self.core.cost_basis = (cost_basis * origin_size + rights_size * item.rgt.price) / self.core.size
             return event_bonus
 
     cdef void _handle_merger(self, bytes target_sid, float close, float ratio):
@@ -202,9 +208,12 @@ cdef class Position:
         self.core.datetime = end_dt
 
     cdef void on_dt_over(self, int32_t end_dt, double close):
-        cdef int32_t size = self.core.size
-        self.core.available = size
-
+        # T+1 unlock: end_dt (the settled day) is guaranteed >= the trade day
+        # of every fill processed so far — fills are synchronous with bars and
+        # end_dt is the day of the last bar before the rollover gap. Hence the
+        # unconditional unlock is exact. If fills ever become asynchronous
+        # (event-driven clock, async execution), this must become day-aware.
+        self.core.available = self.core.size
         self._dt_over(end_dt, close)
 
     cdef Position clone(self):

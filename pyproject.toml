@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "bt_core"
-version = "0.5.4"
-description = "update bt_sdk verison to 0.15.3, add some new features, and fix some bugs."
+version = "0.5.5"
+description = "revise bug in adj_factor and finance"
 authors = ["hengxin.liu <13776668123@163.com>"]
 readme = "README.md"
 build = "build_ext.py"
@@ -52,7 +52,7 @@ grpcio = "^1.78.0"
 protobuf = ">=7.35.1"
 build = "^1.5.0"
 poetry-core = "^2.4.0"
-bt-sdk = "0.15.3"
+bt-sdk = "0.15.5"
 
 [[tool.poetry.source]]
 name = "tuna"
@@ -76,6 +76,20 @@ priority = "supplemental"
 
 # [tool.setuptools.package-data]
 # "*" = ["*.pyx", "*.pxd", "*.so", "*.pyd", "*.h", "*.cpp", "*.proto", "*.pyi*"]
+
+# ---------------------------------------------------------------------------
+# pytest: 三层测试体系(见 tests/README.md)
+#   1. 行为测试 tests/behavior —— 默认收集
+#   2. e2e 回测入口(test_e2e_*) —— 默认被 "-m not e2e" 反选, `pytest -m e2e` 显式跑
+#   3. DB 反向验证/可视化脚本 —— 非 test_* 命名, 天然不收集
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not e2e'"
+markers = [
+    "e2e: end-to-end backtest run; needs md-server(50051) + PG bt_trade, takes minutes (deselected by default, run with: pytest -m e2e)",
+]
+norecursedirs = ["logs", "build", "__pycache__"]
 
 [build-system]
 requires = ["poetry-core", "wheel", "pybind11", "cmake", "Cython>=3.0", "numpy", "setuptools"]

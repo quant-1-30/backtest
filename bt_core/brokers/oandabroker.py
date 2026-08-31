@@ -99,7 +99,7 @@ class OandaBroker(with_metaclass(MetaOandaBroker, BrokerBase)):
 
         if self.p.use_positions:
             for p in self.o.get_positions():
-                print('position for instrument:', p['instrument'])
+                # print('position for instrument:', p['instrument'])
                 is_sell = p['side'] == 'sell'
                 size = p['units']
                 if is_sell:

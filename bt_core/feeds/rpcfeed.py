@@ -68,15 +68,15 @@ class MetaRemoteData(DataBase.__class__):
         LocalStore.DataCls = cls
 
     def donew(cls, *args, **kwargs):
-        print("MetaRemoteData donew kwargs ", kwargs)
+        # print("MetaRemoteData donew kwargs ", kwargs) 
         _obj, args, kwargs = super(MetaRemoteData, cls).donew(*args, **kwargs)
-        print("MetaRemoteData donew kwargs after", kwargs)
+        # print("MetaRemoteData donew kwargs after", kwargs)
         return _obj, args, kwargs
     
     def dopostinit(cls, _obj, *args, **kwargs):
-        print("MetaRemoteData dopostinit kwargs ", kwargs)
+        # print("MetaRemoteData dopostinit kwargs ", kwargs) 
         _obj, args, kwargs = super().dopostinit(_obj, *args, **kwargs) 
-        print("MetaRemoteData dopostinit kwargs ", kwargs)
+        # print("MetaRemoteData dopostinit kwargs ", kwargs)  
         _obj.mdapi = _obj.p.mdapi
         _obj.chan = queue.Queue()
         return _obj, args, kwargs
@@ -102,11 +102,11 @@ class RemoteData(with_metaclass(MetaRemoteData, DataBase)):
 
         tick_body = QueryBody(start_date=kwargs["fromdate"], end_date=kwargs["todate"], sid=self.sid)
         self.get_adjfactor(tick_body)
-        print("finish tick adjadjust")
+        # print("finish tick adjadjust")
 
         bench_body = QueryBody(start_date=kwargs["fromdate"], end_date=kwargs["todate"], sid=kwargs["benchmark"])
         self.get_dret(bench_body)
-        print("finish benchmark data")
+        # print("finish benchmark data")
 
         observable = self.mdapi.subscribe(tick_body, RpcTopic.Tick)
         observable.pipe(
@@ -232,6 +232,7 @@ class RemoteData(with_metaclass(MetaRemoteData, DataBase)):
     def get_adjfactor(self, body: QueryBody):
             adj_data = self.mdapi.get_factor(body, FactorTopic.Qfq)
             adj = adj_data[body.sid[0]]
+            # raw_factors ( ex-date ratio)
             factors = adj.raw_factors if adj else {} # adj_factors
             if factors:
                 factors = dict(sorted(factors.items())) # sort by key

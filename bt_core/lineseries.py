@@ -574,7 +574,7 @@ class LineSeriesStub(LineSeries):
 
     def backwards(self, size=1, force=False):
         if not self.slave:
-            super(LineSeriesStub, self).backwards(size, force=force)
+            super(LineSeriesStub, self).backwards(size)
 
     def rewind(self, size=1):
         if not self.slave:

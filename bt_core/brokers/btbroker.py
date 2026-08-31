@@ -39,15 +39,15 @@ class MetaBtBroker(BrokerBase.__class__):
         LocalStore.BrokerCls = cls 
 
     def donew(cls, *args, **kwargs):
-        print("MetaBtBroker donew kwargs ", kwargs)
+        # print("MetaBtBroker donew kwargs ", kwargs)  # 泄露参数
         _obj, args, kwargs = super(MetaBtBroker, cls).donew(*args, **kwargs)
-        print("MetaBtBroker donew kwargs after", kwargs)
+        # print("MetaBtBroker donew kwargs after", kwargs)
         return _obj, args, kwargs
     
     def dopostinit(cls, _obj, *args, **kwargs):
-        print("MetaBtBroker dopostinit kwargs ", kwargs)
+        # print("MetaBtBroker dopostinit kwargs ", kwargs)  # 泄露参数
         _obj, args, kwargs = super().dopostinit(_obj, *args, **kwargs) 
-        print("MetaBtBroker dopostinit kwargs ", kwargs)
+        # print("MetaBtBroker dopostinit kwargs ", kwargs)  # 泄露参数
         _obj.tdapi = _obj.p.tdapi
         return _obj, args, kwargs
 
@@ -76,33 +76,32 @@ class BTBroker(with_metaclass(MetaBtBroker, BrokerBase)):
         defeating the purpose of working with a live broker
     '''
     params = (
-        ("tdapi", ""),
+        ("tdapi", None),
     )
 
     def _prepare(self, _loop):
         self.tdapi.start(_loop)
-    
+
     def register(self, body:RegisterBody) -> bytes:
         data = self.tdapi.register(body)
-        print("register data :", data)
         return data.body.experiment_id
-    
+
     def set_cash(self, experiment_id:bytes, body:CashBody) -> SnapshotBody:
         data = self.tdapi.set_cash(experiment_id, body)
         return data.body
-    
+
     def submit(self, experiment_id:bytes, body:OrderBody) -> SnapshotBody:
-        data = self.tdapi.submit(experiment_id, body) 
+        data = self.tdapi.submit(experiment_id, body)
         return data.body
-    
+
     def on_dt_over(self, experiment_id:bytes, last_dts: int, dt0: int) -> SnapshotBody:
         body = QueryBody(start_date=last_dts, end_date=dt0)
         data = self.tdapi.on_dt_over(experiment_id, body)
         return data.body
 
-    def subscribe(self, topic:int, experiment_id:bytes) -> List[Union[AccountBody, PositionBody]]: 
+    def subscribe(self, topic:int, experiment_id:bytes, body:QueryBody) -> List[Union[AccountBody, PositionBody]]:
         data = self.tdapi.subscribe(topic, experiment_id, body)
-        body = [r.body for r in data] 
+        body = [r.body for r in data]
         return body
     
     def get_snapshot(self, experiment_id:bytes) -> SnapshotBody:

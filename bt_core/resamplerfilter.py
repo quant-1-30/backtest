@@ -308,11 +308,11 @@ class _BaseResampler(with_metaclass(metabase.MetaParams, object)):
             tframe = self.p.timeframe
             ret = False
             if tframe == TimeFrame.Weeks:  # Ticks is already the lowest
-                ret = data._calendar.last_weekday(data.datetime.date())
+                ret = data._calendar.last_weekday(data.datetime.datetime().date())
             elif tframe == TimeFrame.Months:
-                ret = data._calendar.last_monthday(data.datetime.date())
+                ret = data._calendar.last_monthday(data.datetime.datetime().date())
             elif tframe == TimeFrame.Years:
-                ret = data._calendar.last_yearday(data.datetime.date())
+                ret = data._calendar.last_yearday(data.datetime.datetime().date())
 
             if ret:
                 # Data must be consumed but compression may not be met yet

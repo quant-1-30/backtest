@@ -146,7 +146,10 @@ class TradingCalendar(TradingCalendarBase):
     )
 
     def __init__(self):
-        self._earlydays = [x[0] for x in self.p.earlydays]  # to_pydatetime / pd.DatetimeIndex / timedelta / searchsorted 
+        # normalize to datetime.date: schedule() compares against day.date()
+        # (a datetime is never equal to a date -> earlydays never matched)
+        self._earlydays = [x[0].date() if isinstance(x[0], datetime) else x[0]
+                           for x in self.p.earlydays]
 
     def _nextday(self, day: datetime):
         '''
@@ -189,7 +192,7 @@ class TradingCalendar(TradingCalendarBase):
             except ValueError:  
                 o, c = self.p.open, self.p.close
 
-            closing = datetime.combine(dt, c).replace(tzinfo=tz)
+            closing = datetime.combine(dt, c).replace(tzinfo=tzinfo)
 
             if day > closing:  
                 day += ONEDAY

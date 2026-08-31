@@ -99,8 +99,8 @@ class MACDSignal(btind.Indicator):
 
     def next(self):
         signal = self.lines.signal[0] # macd', 'signal', 'histo'
-        if not np.isnan(signal):
-           print("MacdSignal :", signal)
+        # if not np.isnan(signal):
+        #    print("MacdSignal :", signal)  # 每 bar 都打, 刷屏
 
 
 class VolSignal(btind.Indicator):
@@ -208,9 +208,9 @@ if __name__ == '__main__':
     wdata = cerebro.resampledata(timeframe=bt.TimeFrame.Weeks, adjbartime=False)
     # mdata = cerebro.resampledata(timeframe=bt.TimeFrame.Months, adjbartime=False, compression=1)
     # ydata = cerebro.resampledata(timeframe=bt.TimeFrame.Years, adjbartime=False, compression=1)
-    
+
     cerebro.add_signalStrategy(TestSignalStrategy)
-    
+
     # signal
     cerebro.add_signal(bt.SIGNAL_LONG, WeekPriceSignal, ddata, wdata)
     cerebro.add_signal(bt.SIGNAL_LONG_INV, DailyPriceSignal, ddata)
@@ -218,7 +218,7 @@ if __name__ == '__main__':
     cerebro.add_signal(bt.SIGNAL_LONG, VolSignal, ddata)
     cerebro.add_signal(bt.SIGNAL_SHORT, SellSignal, ddata) 
     cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal)
-    
+
     # add parquet
     from bt_core.feeds import SignalPatch
     patch_data = SignalPatch(sid=b"300308")

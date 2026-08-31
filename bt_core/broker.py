@@ -68,7 +68,9 @@ class BrokerBase(with_metaclass(MetaBroker, object)):
             raise Exception("TDAPI not connected")
 
     def cancel(self, vtorder_id):
-        self.tdapi.cancel(vtorder_id)
+        # TdApi exposes no cancel endpoint yet; fail loudly instead of a
+        # confusing AttributeError on a missing attribute
+        raise NotImplementedError("order cancel is not supported by TdApi")
 
     def stop(self):
         pass

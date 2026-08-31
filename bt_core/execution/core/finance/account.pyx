@@ -67,23 +67,25 @@ cdef class Account:
         _cash = self.core.cash + cash
         self.core.cash = _cash
 
-    cdef void update(self, list trades, double pnl):
+    cdef void update(self, list trades):
         '''
         Updates the current Trade on Account
         '''
-        cdef OrderExbitData core 
+        cdef OrderExbitData core
         cdef OrderExecutionBit trade
         cdef double _val = 0.0
         cdef double _comm = 0.0
         cdef int64_t max_dt = 0
-        
+
         for trade in trades:
             core = trade.core
-            _val += core.executed_price * core.executed_size if core.isbuy else -1 * core.executed_price * core.executed_size 
+            _val += core.executed_price * core.executed_size if core.isbuy else -1 * core.executed_price * core.executed_size
             _comm += core.comm
             max_dt = max(core.executed_dt, max_dt)
-        
-        self.core.cash -= (_val + _comm) 
+
+        self.core.cash -= (_val + _comm)
+        # keep unix ts intraday (ts ordering survives multiple updates per day);
+        # sync() is the single point that normalizes to ymd for persistence
         self.core.datetime = max_dt
 
     cdef void sync(self, int64_t tick, dict pobjs, dict closes):
@@ -104,10 +106,17 @@ cdef class Account:
             _v += p.core.size * close
             _pnl += p.core.pnl + p.core.realized_pnl
             max_dt = max(p.core.datetime, max_dt)
-        
+
         self.core.portfolio_value = _v
         self.core.pnl = _pnl
-        self.core.datetime = ts2intdt(max_dt)
+        # tick arrives as unix ts (simulate.on_dt_over); positions were already
+        # normalized to ymd by their own on_dt_over. ts values dominate the max,
+        # so a single conversion here covers the mixed inputs. Guard against
+        # double conversion (ts2intdt(20240105) -> 19700823) when every input
+        # is already ymd (restored-from-db account, ymd-only callers).
+        if max_dt >= 100000000:  # unix ts magnitude; ymd ints stay below 1e8
+            max_dt = ts2intdt(<double>max_dt)
+        self.core.datetime = max_dt
 
     cdef Account clone(self):
         cdef Account obj = Account.__new__(Account) # only allocate memory

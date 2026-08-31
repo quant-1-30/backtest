@@ -163,7 +163,7 @@ class PandasData(DataBase):
     # lines = ("tick",)
 
     def __init__(self):
-        print("pandasdata __init__")
+        # print("pandasdata __init__")
         super(PandasData, self).__init__()
 
         # these "colnames" can be strings or numeric types
@@ -272,7 +272,7 @@ class PandasData(DataBase):
             dt = tstamp.to_pydatetime()
         else:
             dt = datetime.datetime.fromtimestamp(tstamp)
-        print("dt", dt)
+        # print("dt", dt)  # 每根 bar 都打
         dtnum = date2num(dt)
         self.lines.datetime[0] = dtnum
 

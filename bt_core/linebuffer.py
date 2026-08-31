@@ -22,6 +22,7 @@
 import array
 import datetime
 import math
+import operator
 import numpy as np
 import collections
 
@@ -96,8 +97,10 @@ class LineBuffer(LineSingle):
         self.lencount = 0
         self.extension = 0
 
-        # self.idx = -1
-        # self._cur_idx = -1
+        # logic pointers must be reset too, else a second runstrategies pass
+        # (or re-run of cerebro) starts with stale idx/lencount state
+        self.idx = -1
+        self._cur_idx = -1
 
     def qbuffer(self, savemem=0):
         if savemem:
@@ -192,7 +195,7 @@ class LineBuffer(LineSingle):
             A slice of the underlying buffer
         '''
         return self.array[idx]
-    
+
     def get(self, ago=0, size=1):
         ''' Returns a slice of the array relative to *ago*
 
@@ -208,22 +211,42 @@ class LineBuffer(LineSingle):
             A slice of the underlying buffer
         '''
         idx = self.idx % self.maxlen
-        if size <= idx + 1:
-            start_index = idx - size + 1
-            end_index = idx + ago + 1
+        # window is [idx+ago-size+1, idx+ago] inclusive in BOTH branches
+        start_index = idx + ago - size + 1
+        end_index = idx + ago + 1
+        if start_index >= 0 and end_index <= self.maxlen:
             return self.array[start_index: end_index]
-        else:
-            array1 = self.array[idx-size:]
-            array2 = self.array[:idx]
-            return np.concatenate((array1, array2))
+
+        if start_index < 0:
+            # history crossing the ring tail: self.array is a numpy buffer in
+            # QBuffer mode, so a negative start index wraps to the tail. The
+            # branch must be chosen on the resolved window bounds (the previous
+            # `size <= idx+1` test ignored `ago`); the wrap slice starts at
+            # start_index, NOT start_index-1 — the old formula returned size+1
+            # elements
+            return np.concatenate((self.array[start_index % self.maxlen:],
+                                   self.array[:end_index]))
+
+        # future crossing the ring head: numpy silently truncates
+        # array[:end_index] to the WHOLE array when end_index > maxlen, which
+        # used to return maxlen + (maxlen - start) elements instead of size.
+        # start_index may itself exceed maxlen (window a full lap ahead), so
+        # reduce both bounds modulo and split at the seam:
+        # [start % maxlen, maxlen) + [0, end % maxlen)
+        return np.concatenate((self.array[start_index % self.maxlen:],
+                               self.array[:end_index % self.maxlen]))
     
-    def getzero(self, size=1):
+    def getzero(self, idx=0, size=1):
         ''' Returns a slice of the array relative to the real zero of the buffer
 
         Keyword Args:
+            idx (int): Where to start relative to the real start of the buffer
+            size (int): size of the slice to return
 
+        Returns:
+            A slice of the underlying buffer (physical layout)
         '''
-        return self.get(ago=0, size=size)
+        return self.array[idx: idx + size]
  
     def home(self):
         ''' Rewinds the logical index to the beginning
@@ -316,8 +339,7 @@ class LineBuffer(LineSingle):
         Returns:
             A slice of the underlying buffer
         '''
-        return self.getzero(idx, size or len(self))
-    
+        return self.getzero(idx, size or len(self))    
     def plotrange(self, start, end):
         if self.useislice:
             return list(islice(self.array, start, end))
@@ -492,8 +514,21 @@ class LineBuffer(LineSingle):
     #     self.array = array * factors
     
     def apply_factor(self, factor: float):
-        array = self.array
-        self.array = array * factor
+        '''Back-adjust the WHOLE buffer (every stored historical bar).
+
+        Excluding the current bar is the CALLER's contract — feed.apply_factor
+        saves/restores line[0] around this call. No static slice (e.g.
+        array[:-1]) can express "all but current" here: in QBuffer ring mode
+        the current bar lives at slot idx % maxlen which moves every bar, and
+        in UnBounded mode the backing store is array.array('d') where
+        `array * float` would raise TypeError.
+        '''
+        arr = np.asarray(self.array) * factor
+        if self.mode == QBuffer:
+            self.array = arr
+        else:
+            # keep array.array('d'): forward() extends it in place
+            self.array = array.array('d', arr)
 
 
 class MetaLineActions(LineBuffer.__class__):
@@ -725,11 +760,15 @@ class LinesOperation(LineActions):
 
     def next(self):
         if self.bline:
-            # RuntimeWarning: divide by zero encountered in scalar divide
-            # self[0] =  0 if np.isclose(self.b[0], 0) else self.operation(self.a[0], self.b[0]) # np.isclose used for matrix
+            # zero-guard is only meaningful for division; applying it to every
+            # operator silently turned `a - 0`, `a < 0`, `a == 0` ... into 0.0
             b_val = self.b[0]
             a_val = self.a[0]
-            self[0] = 0.0 if abs(b_val) < 1e-9 else self.operation(a_val, b_val)
+            if (self.operation in (operator.__truediv__, operator.__floordiv__)
+                    and abs(b_val) < 1e-9):
+                self[0] = 0.0
+            else:
+                self[0] = self.operation(a_val, b_val)
         elif not self.r:
             if not self.btime:
                 self[0] = self.operation(self.a[0], self.b)

@@ -121,12 +121,12 @@ cdef class Pnc:
                 active_positions_count += 1
 
         # Debug output
-        if active_positions_count > 0:
-            print(f"[on_risk] Day {current_day}: active_positions={active_positions_count}, max_positions={self.max_positions}")
+        # if active_positions_count > 0:
+        #     print(f"[on_risk] Day {current_day}: active_positions={active_positions_count}, max_positions={self.max_positions}")
 
         # If we exceed max_positions, sell the excess (prioritize longest held, not in topk)
         if active_positions_count > self.max_positions:
-            print(f"[on_risk] Day {current_day}: EXCEEDED max_positions! Selling {active_positions_count - self.max_positions} positions")
+            # print(f"[on_risk] Day {current_day}: EXCEEDED max_positions! Selling {active_positions_count - self.max_positions} positions")
             excess_count = active_positions_count - self.max_positions
 
             # Collect positions for sorting
@@ -188,7 +188,7 @@ cdef class Pnc:
         # 3. Macro Control --- Drawdown
         # ===========================================================================================
         if stats["drawdown"].maxdd >= self.dd:
-            print("reach maxdd and execute sell all")
+            # print("reach maxdd and execute sell all")
             for pos in positions:
                 c_sid = <cpp_string>pos.sid
 
@@ -270,24 +270,25 @@ cdef class Pnc:
         # ===================================================================================
         # PHASE 1: Calculate current active positions
         # ===================================================================================
-        # Count positions EXCLUDING those in pending_sells OR with available == 0
-        # (pending_sells are already scheduled to be sold, available == 0 means already sold out)
+        # Count positions EXCLUDING those in pending_sells; use size > 0 so that
+        # T+1 locked buys (available == 0 until tomorrow) still occupy a slot,
+        # otherwise same-day buys could breach max_positions
         active_positions_count = 0
         for pos in positions:
             c_sid = <cpp_string>pos.sid
-            if pos.available > 0 and self.pending_sells.find(c_sid) == self.pending_sells.end():
+            if pos.size > 0 and self.pending_sells.find(c_sid) == self.pending_sells.end():
                 active_positions_count += 1
 
         # Debug output for PHASE 1
-        if active_positions_count > 0:
-            print(f"[generate_plan PHASE1] Day {current_day}: active_positions={active_positions_count}, max_positions={self.max_positions}")
+        # if active_positions_count > 0:
+        #     print(f"[generate_plan PHASE1] Day {current_day}: active_positions={active_positions_count}, max_positions={self.max_positions}")
 
         # ===================================================================================
         # PHASE 2: Enforce max_positions limit FIRST (highest priority)
         # ===================================================================================
         if active_positions_count > self.max_positions:
             excess_count = active_positions_count - self.max_positions
-            print(f"[generate_plan PHASE2] Day {current_day}: EXCEEDED max_positions! Selling {excess_count} positions")
+            # print(f"[generate_plan PHASE2] Day {current_day}: EXCEEDED max_positions! Selling {excess_count} positions")
 
             # Collect active positions for sorting
             pos_with_days.clear()
@@ -354,7 +355,7 @@ cdef class Pnc:
             # but the order failed (e.g., limit-down with zero volume).
             # We MUST re-issue the sell order today to keep trying to exit the position.
             if self.pending_sells.find(c_sid) != self.pending_sells.end():
-                print(f"[generate_plan PHASE4] Day {current_day}: RE-ISSUING sell order for stuck position {c_sid.decode('utf-8', errors='ignore')} (available={pos.available})")
+                # print(f"[generate_plan PHASE4] Day {current_day}: RE-ISSUING sell order for stuck position {c_sid.decode('utf-8', errors='ignore')} (available={pos.available})")
 
                 tmp.sid = c_sid
                 tmp.weight = 1.0
@@ -402,11 +403,11 @@ cdef class Pnc:
         # ===================================================================================
         # PHASE 5: Recalculate active positions AFTER all sells
         # ===================================================================================
-        # Count positions with available > 0 and NOT in pending_sells (will be held after sells execute)
+        # Count held positions (size > 0, incl. T+1 locked) NOT in pending_sells
         active_positions_count = 0
         for pos in positions:
             c_sid = <cpp_string>pos.sid
-            if pos.available > 0 and self.pending_sells.find(c_sid) == self.pending_sells.end():
+            if pos.size > 0 and self.pending_sells.find(c_sid) == self.pending_sells.end():
                 active_positions_count += 1
 
         # Also count pending_sells (they still occupy slots until executed)
@@ -432,12 +433,15 @@ cdef class Pnc:
             slots = slots_by_max_pos
 
         # Debug output for PHASE 6
-        print(f"[generate_plan PHASE6] Day {current_day}: slots={slots}, slots_by_max_pos={slots_by_max_pos}, active={active_positions_count}, pending={pending_sells_count}, total={total_held_count}, topk_size={max_slots_from_topk if not c_topk_info.empty() else 0}")
+        # print(f"[generate_plan PHASE6] Day {current_day}: slots={slots}, slots_by_max_pos={slots_by_max_pos}, active={active_positions_count}, pending={pending_sells_count}, total={total_held_count}, topk_size={max_slots_from_topk if not c_topk_info.empty() else 0}")  # 泄露策略参数
 
         # ===================================================================================
         # PHASE 7: Cash Control
         # ===================================================================================
         if account.cash <= 10000:
+            # still mark the day as traded: skipping this would make the
+            # same-day guard at the top re-run the whole plan
+            self._last_trade_day = current_day
             plan[<cpp_string>b"sell"] = sells
             plan[<cpp_string>b"buy"] = buys
             return plan
@@ -445,13 +449,21 @@ cdef class Pnc:
         # ===================================================================================
         # PHASE 8: Buy Control (strictly enforce slot limit)
         # ===================================================================================
-        b_wgt = self.sizer.getsizing(c_topk_info, snapshot, True)
+        if self.sizer is not None:
+            b_wgt = self.sizer.getsizing(c_topk_info, snapshot, True)
 
         for py_sid in topk_info:
             c_sid = <cpp_string>py_sid
             buy_rank += 1
 
             if self.pending_sells.find(c_sid) != self.pending_sells.end():
+                continue
+
+            it_wgt = b_wgt.find(c_sid)
+            wgt_ratio = deref(it_wgt).second if it_wgt != b_wgt.end() else 0.0
+
+            # weight first: a candidate with 0 weight must not burn a slot
+            if wgt_ratio <= 0:
                 continue
 
             # Check if already held (consider size > 0, not just available, to avoid
@@ -468,18 +480,14 @@ cdef class Pnc:
                     continue  # No more slots for new positions
                 slots -= 1  # Consume one slot for new position
 
-            it_wgt = b_wgt.find(c_sid)
-            wgt_ratio = deref(it_wgt).second if it_wgt != b_wgt.end() else 0.0
+            tmp.sid = c_sid
+            tmp.weight = wgt_ratio
+            tmp.size = 0
+            tmp.priority = buy_rank
+            tmp.execType = execType
+            tmp.filler = filler
 
-            if wgt_ratio > 0:
-                tmp.sid = c_sid
-                tmp.weight = wgt_ratio
-                tmp.size = 0
-                tmp.priority = buy_rank
-                tmp.execType = execType
-                tmp.filler = filler
-
-                buys.push_back(tmp)
+            buys.push_back(tmp)
 
         c_sort(buys.begin(), buys.end(), compare_trader_plans)
 

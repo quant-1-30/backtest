@@ -4,7 +4,35 @@
 
 from bt_core.utils.dateintern cimport ts2intdt
 
+from libc.time cimport tm as c_tm, time_t
+
+# timegm 是 POSIX 扩展, Cython 自带 libc.time.pxd 未声明, 手动 extern
+# (glibc / macOS libc 均提供; Windows CRT 对应 _mkgmtime, 如需移植再适配)
+cdef extern from "<time.h>" nogil:
+    time_t timegm(c_tm *timeptr) noexcept
+
 cdef const int64_t CYB_CKPT = 1598232600
+
+
+cdef inline int32_t _days_from_civil(int32_t y, int32_t m, int32_t d) noexcept nogil:
+    """
+    y-m-d 距 1970-01-01 的真实日历天数 (新股豁免需要跨月/跨年差):
+    填 struct tm 后交给 libc timegm (UTC 语义) 算出 Unix 秒, 除以 86400 取天。
+    闰年/大小月全部由 C 库负责, 引擎侧不维护任何历法逻辑。
+    约束: y-m-d 为合法日期 (调用方由 ymd int 拆出, 恒成立)。
+    """
+    cdef c_tm t
+    t.tm_sec = 0
+    t.tm_min = 0
+    t.tm_hour = 0
+    t.tm_mday = d
+    t.tm_mon = m - 1
+    t.tm_year = y - 1900
+    t.tm_wday = 0
+    t.tm_yday = 0
+    t.tm_isdst = 0
+
+    return <int32_t>(timegm(&t) // 86400)
 
 
 cdef class Asset:
@@ -76,7 +104,10 @@ cdef class Asset:
 
         if self.core.first_trading > 0:
             current_ymd = ts2intdt(<double>ts)
-            is_new_stock = (current_ymd - self.core.first_trading) <=5 
+            is_new_stock = (_days_from_civil(current_ymd // 10000, (current_ymd // 100) % 100, current_ymd % 100)
+                            - _days_from_civil(self.core.first_trading // 10000,
+                                               (self.core.first_trading // 100) % 100,
+                                               self.core.first_trading % 100)) <= 5
         else:
             is_new_stock = False
 

@@ -26,6 +26,7 @@ from bt_protocol._protocol import SnapshotBody
 
 
 class PositionsAnalyzer(bt.TimeFrameAnalyzerBase):
+    consumes_shm = True  # drains shm events; registers a ring consumer
     '''
     Provides statistics on closed trades (keeps also the count of open ones)
 
@@ -96,7 +97,9 @@ class PositionsAnalyzer(bt.TimeFrameAnalyzerBase):
             if sid:
                 self._today_trades.append({'sid': sid, 'body': tb})
             else:
-                raise ValueError(f'{tb["order_id"]} not founded')
+                # unmapped order (merger sid switch / pruned history): skip the
+                # trade rather than abort the whole backtest
+                print(f"warning: {p} unmapped order_id {tb['order_id']}")
 
     def on_dt_over(self, dt0: int, snapshot: SnapshotBody):
         self._process_events()

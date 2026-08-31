@@ -59,12 +59,12 @@ cdef class SyncCashManager:
         acct = self.get_account(experiment_id)
         acct.add_cash(cash)
 
-    cdef void update(self, bytes experiment_id, list trades, double pnl):
+    cdef void update(self, bytes experiment_id, list trades):
         """update account with position"""
         cdef Account acct
 
         acct = self.get_account(experiment_id)
-        acct.update(trades, pnl)
+        acct.update(trades)
 
     cdef void sync(self, bytes experiment_id, int64_t sync_tick, dict pobjs, dict closes):
         """sync account on_dt_over"""

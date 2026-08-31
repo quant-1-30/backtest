@@ -265,7 +265,7 @@ def _make_unsupported_method(name):
     method.__doc__ = "Unsupported LabelArray Method: %s" % name
     return method
 
-def api_method(f): # patch 
+def api_method(f): # patch
 
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -277,7 +277,7 @@ def api_method(f): # patch
                 % f.__name__
             )
         return getattr(algo_instance, f.__name__)(*args, **kwargs)
-    return f
+    return wrapped
 
 def profile(func):
 

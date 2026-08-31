@@ -120,7 +120,7 @@ cdef class Timer:
         self.monthdays = sorted(list(kwargs.get('monthdays', [])))
         self.monthcarry =  kwargs.get("monthcarry", True)
         self._tzdata = kwargs.get("tzdata", None)
-        self.allow = None # callable that allows a timer to take place
+        self.allow = kwargs.get("allow", None) # callable that allows a timer to take place
 
         # reset status
         self._rstwhen = None
@@ -237,6 +237,12 @@ cdef class Timer:
 
         ddate = d.date()
 
+        # non-repeating timers fire at most once per day: _lastcall records the
+        # day of the last trigger/reset, and without this guard every bar after
+        # the trigger re-generates the (already past) target time and fires again
+        if self.repeat <= 0.0 and ddate == self._lastcall:
+            return False
+
         if ddate > self._curdate:
             self._curdate = ddate
             
@@ -262,7 +268,7 @@ cdef class Timer:
             if d.tzinfo is not None:
                 dwhen = dwhen.replace(tzinfo=d.tzinfo)
             
-            if self.offset > 0:
+            if self.offset != 0:
                 dwhen += timedelta(seconds=self.offset)
             
             self._dwhen = dwhen

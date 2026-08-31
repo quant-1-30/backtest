@@ -13,7 +13,8 @@ from bt_core.execution.core.finance.position cimport PositionCoreData
 
 # A 股手续费时间分界点 (unix 秒)
 cdef const int64_t STAMP_TAX_CKPT = 1693180800     # 2023-08-28 印花税 1‰ -> 0.5‰
-cdef const int64_t TRANSFER_FEE_CKPT = 1651180800  # 2022-04-29 过户费沪深统一双向
+cdef const int64_t TRANSFER_FEE_CKPT = 1651180800  # 2022-04-29 过户费 0.02‰ -> 0.01‰
+cdef const int64_t TRANSFER_FEE_UNIFY_CKPT = 1438387200  # 2015-08-01 沪深统一按成交金额 0.02‰ (此前沪市按面值 0.06‰, 深市免收)
 cdef const int64_t RatioCkpt = 1433813400          # 2015 佣金 3‰ -> 0.5‰ (万分之5)
 
 
@@ -77,12 +78,14 @@ cdef class CommInfo_Stocks(CommInfoBase):
         if not is_buy:
             stamp_commission = 5e-4 if core.created_dt >= STAMP_TAX_CKPT else 1e-3
 
-        # 2. 过户费
+        # 2. 过户费 (0.01‰ = 1e-5, 旧费率 0.02‰ = 2e-5)
         cdef double transfer_commission
         if core.created_dt >= TRANSFER_FEE_CKPT:
-            transfer_commission = 1e-4  # 沪深双向
+            transfer_commission = 1e-5  # 沪深双向
+        elif core.created_dt >= TRANSFER_FEE_UNIFY_CKPT:
+            transfer_commission = 2e-5  # 2015-08-01 起沪深统一 0.02‰
         else:
-            transfer_commission = 1e-4 if order.exchange == Exchange.SSE else 0.0
+            transfer_commission = 6e-5 if order.exchange == Exchange.SSE else 0.0
 
         # 3. 交易佣金
         cdef double trade_commission = 3e-3 if core.created_dt < RatioCkpt else 5e-4
@@ -108,11 +111,13 @@ cdef class CommInfo_Stocks(CommInfoBase):
             stamp_rate = 5e-4 if core.created_dt >= STAMP_TAX_CKPT else 1e-3
             stamp_tax = trade_value * stamp_rate
 
-        # 2. 过户费 (双向, 无最低门槛)
+        # 2. 过户费 (双向, 无最低门槛; 0.01‰ = 1e-5, 旧费率 0.02‰ = 2e-5)
         if core.created_dt >= TRANSFER_FEE_CKPT:
-            transfer_fee = trade_value * 1e-4
+            transfer_fee = trade_value * 1e-5
+        elif core.created_dt >= TRANSFER_FEE_UNIFY_CKPT:
+            transfer_fee = trade_value * 2e-5
         else:
-            transfer_fee = trade_value * 1e-4 if order.exchange == Exchange.SSE else 0.0
+            transfer_fee = trade_value * 6e-5 if order.exchange == Exchange.SSE else 0.0
 
         # 3. 交易佣金 (5 元最低红线仅适用于佣金)
         comm_rate = 3e-3 if core.created_dt < RatioCkpt else 5e-4

@@ -207,7 +207,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
 
     def set_cash(self, **kwargs):
         cash = kwargs.pop("cash", 100000)
-        session = kwargs["fromdate"]
+        session = kwargs.pop("fromdate", 0)
         snapshot = self.store.set_cash(self.experiment_id, session, cash)
         self.shm_chan.publish_snapshot(snapshot)
 
@@ -250,19 +250,24 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         self._dlens = newdlens
 
     def on_dt_over(self, last_dts: int, dts: int):
-        snapshot = self.store.on_dt_over(self.experiment_id, last_dts, dts) 
+        snapshot = self.store.on_dt_over(self.experiment_id, last_dts, dts)
         if snapshot:
             self.shm_chan.publish_snapshot(snapshot)
-            self.snapshot = snapshot  
- 
-        self.shm_chan.publish_sentinel(dts)
+            self.snapshot = snapshot
+
+        # final settlement calls on_dt_over(last, 0): curr=0 tells the
+        # simulator "no events today" (re-applying dividends would corrupt
+        # positions), but downstream consumers must not see a bogus
+        # 1970-01-01 dt row -> publish under the real last trading day
+        publish_dts = dts if dts > 0 else last_dts
+        self.shm_chan.publish_sentinel(publish_dts)
 
         for analyzer in self.analyzers:
             if hasattr(analyzer, 'on_dt_over'):
-                analyzer.on_dt_over(dts, snapshot)
+                analyzer.on_dt_over(publish_dts, snapshot)
 
         for _d in self.datas:
-            _d.on_dt_over(dts)
+            _d.on_dt_over(publish_dts)
 
     def notify_metrics(self, last_dts: int): 
         """
@@ -297,8 +302,8 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         if sell_plans:
             self.sell(sell_plans) 
 
-    def on_trade(self, current_dts: int): 
-        print(f"[Strategy] Trigger on {current_dts}")
+    def on_trade(self, current_dts: int):
+        # print(f"[Strategy] Trigger on {current_dts}")  # 每次触发都打, 刷屏
 
         current_day = ts2intdt(current_dts)
         topk = self.datas[-1].get_topk(current_day)
@@ -373,7 +378,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
             snapshot = self.store.submit(self.experiment_id, order)
             trades = snapshot.trades
             if trades:
-                print("buy trades: ", len(trades))
+                # print("buy trades: ", len(trades))  # 每笔调仓都打
                 self.shm_chan.publish_snapshot(snapshot) # publish trade to shared memory for writer to consume
 
             self.shm_chan.publish_order(order)
@@ -410,8 +415,8 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
             snapshot = self.store.submit(self.experiment_id, order)
             trades = snapshot.trades
             if trades:
-                print("sell trades: ", len(trades))
-                self.shm_chan.publish_snapshot(snapshot) 
+                # print("sell trades: ", len(trades)) 
+                self.shm_chan.publish_snapshot(snapshot)
                 filled[sid] = trades 
             
             self.shm_chan.publish_order(order)
@@ -437,9 +442,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
         self.store.stop()
 
         self.shm_chan.close()
-        print("shm_chan close")
         self.shm_chan.unlink()
-        print("shm_chan unlink")
     
 
 class MetaSigStrategy(Strategy.__class__): # Stragey元类 / obj.__class__ 类 / class.__class__ 元类
@@ -598,7 +601,7 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
         snapshot = self.get_snapshot()
 
         _plan = self.pnc.generate_plan(current_day, topk, snapshot)
-        print("generate_plan", _plan)
+        # print("generate_plan", _plan)  # 泄露策略信号, 勿启用
 
         if l_enter:
             if self._accumulate:

@@ -16,8 +16,8 @@ cpdef enum Session:
 
 cdef class Timer:
     cdef object when
-    cdef int32_t offset
-    cdef int32_t repeat
+    cdef double offset
+    cdef double repeat
     cdef list weekdays
     cdef list monthdays
     cdef bint weekcarry

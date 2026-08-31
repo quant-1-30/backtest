@@ -81,9 +81,11 @@ cdef class Order:
         '''
         self.info = asset.core
 
-    cdef void execute(self, int32_t size, OrderExecutionBit order_bit, double order_price): # except * 
+    cdef void execute(self, int32_t size, OrderExecutionBit order_bit, double order_price): # except *
         cdef OrderExbitData core = order_bit.core
+        cdef OrderExecutionBit ob
         cdef int32_t exbit_size = core.executed_size
+        cdef int32_t cum_filled = 0
 
         if exbit_size <= 0:
             return
@@ -91,17 +93,21 @@ cdef class Order:
         self._exbits.append(order_bit)
         self._exbits_schema.append(order_bit.to_schema())
 
-        # partial = abs(self.core.size) - abs(exbit_size)
-        partial = abs(size) - abs(exbit_size)
-        if partial > 0:
+        # completed/partial must be judged on cumulative filled size,
+        # not on the size of this single bit (multi-fill orders would
+        # otherwise never reach Completed)
+        for ob in self._exbits:
+            cum_filled += ob.core.executed_size
+
+        if cum_filled < abs(size):
             self.partial()
-        else: 
-            # partial == 0
+        else:
+            # fully filled
             self.completed()
-        
+
         # update core.size
         self.core.size = size
-        self.core.price = order_price 
+        self.core.price = order_price
    
     cdef void submit(self):
         '''Marks an order as submitted and stores the broker to which it was
@@ -209,8 +215,9 @@ cdef class Order:
     #         return v_id == y
 
     def __reduce__(self): # class / args
-        return (Order, (self.core.experiment_id, self.core.sid, self.core.sizer_ratio, 
-                        self.core.order_type, self.core.exec_type, self.core.created_dt, self.filler)      
+        return (Order, (self.core.experiment_id, self.core.sid, self.core.order_id,
+                        self.core.sizer_ratio, self.core.price, self.core.order_type,
+                        self.core.exec_type, self.core.created_dt, self.filler)
         )
     
     def __repr__(self):

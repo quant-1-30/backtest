@@ -11,7 +11,7 @@ cdef class SyncCashManager:
 
     cdef void add_cash(self, bytes experiment_id, double cash)
     
-    cdef void update(self, bytes experiment_id, list trades, double pnl)
+    cdef void update(self, bytes experiment_id, list trades)
     
     cdef void sync(self, bytes experiment_id, int64_t sync_tick, dict pobjs, dict closes)
     

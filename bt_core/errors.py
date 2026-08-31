@@ -40,8 +40,9 @@ class ModuleImportError(BtCoreError):
     '''Raised if a class requests a module to be present to work and it cannot
     be imported'''
     def __init__(self, message, *args):
-        super(ModuleImportError, self).__init__(message)
-        self.args = args
+        # keep the message in args: overwriting self.args with the extra
+        # arguments turned str(exc) into a bare tuple
+        super(ModuleImportError, self).__init__(message, *args)
 
 
 class FromModuleImportError(BtCoreError):

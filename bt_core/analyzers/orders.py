@@ -26,6 +26,7 @@ from bt_protocol._protocol import SnapshotBody
 
 
 class OrdersAnalyzer(bt.TimeFrameAnalyzerBase):
+    consumes_shm = True  # drains shm events; registers a ring consumer
     '''This analyzer reports the orders occurred with each an every data in
     the system
 

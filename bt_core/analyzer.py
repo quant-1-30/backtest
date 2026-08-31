@@ -78,9 +78,13 @@ class MetaAnalyzer(MetaParams):
         if _obj._parent is not None:
             _obj._parent._register(_obj) # analyzer with analyzer
 
-        # Register to shm
-        shm_id = _obj.shm.register_consumer()
-        _obj.shm_id = shm_id
+        # Register to shm only when the analyzer actually consumes events:
+        # a registered consumer whose tail never advances blocks the producer
+        # forever once the ring wraps (publish spins on min_tail)
+        if getattr(_obj, 'consumes_shm', False):
+            _obj.shm_id = _obj.shm.register_consumer()
+        else:
+            _obj.shm_id = -1
         return _obj, args, kwargs
 
 

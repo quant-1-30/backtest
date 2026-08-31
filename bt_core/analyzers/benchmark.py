@@ -107,7 +107,12 @@ class Benchmark(bt.TimeFrameAnalyzerBase):
         dtint = ts2intdt(dt0)
 
         loc = np.searchsorted(self.dts, dtint)
-        loc_dret = self.returns[loc] if loc < len(self.dts) else np.nan
+        # exact match only: a plain searchsorted would attribute the NEXT
+        # trading day's benchmark return to a date missing from the series
+        if loc < len(self.dts) and self.dts[loc] == dtint:
+            loc_dret = self.returns[loc]
+        else:
+            loc_dret = np.nan
 
         self.log_shm.publish_metric(b"BenchmarkDret", loc_dret, dt0)
 

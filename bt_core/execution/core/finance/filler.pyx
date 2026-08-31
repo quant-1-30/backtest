@@ -228,9 +228,18 @@ cdef class PseudoFiller:
 
         # exec_type price
         cdef double target_price = self._get_exec_price(order, lines, start_loc)
-        
+        cdef int32_t avail
+
         # calculate buy size or sell size
         cdef int32_t total_size = core.size if core.size > 0 else calculate(order, p_obj, cash, target_price, self.slip, self.comm)
+
+        if not is_buy:
+            # never sell more than T+1 available shares: Position.update would
+            # raise mid-order and leave the tracker in a half-processed state
+            avail = p_obj.get_available()
+            if total_size > avail:
+                total_size = avail
+
         cdef int32_t remains = total_size
 
         cdef int32_t exec_loc, filler_size, filled
@@ -261,7 +270,9 @@ cdef class PseudoFiller:
                 start_loc = exec_loc + 1
                 continue
 
-            filler_size = _round_to_lot(filler_size, info.tick_size, exec_loc == n - 1 and not is_buy)
+            # A股规则: 买入必须整手; 卖出可一次性卖出全部余额(含零股)
+            filler_size = _round_to_lot(filler_size, info.tick_size,
+                                        (not is_buy) and (exec_loc == n - 1 or filler_size >= remains))
             if filler_size <= 0:
                 start_loc = exec_loc + 1
                 continue
@@ -290,6 +301,15 @@ cdef class PseudoFiller:
 # =====================================================================
 
 cdef class AlgoFiller(PseudoFiller):
+    """VWAP/TWAP 调度已禁用(未来函数), 回退 PseudoFiller 因果撮合。
+
+    原 VWAP 用**全天**成交量归一进度(expected_ratio = accum/total_vol, total_vol
+    对 [start_loc, n) 全区间求和), TWAP 用剩余 bar 数做分母 —— 两者都是订单
+    提交时刻不可知的信息(分钟级以下执行价假设失真, 评审 P1-3)。严格因果
+    口径下构造不出进度比例, 而逐 bar 按当日量×impact 参与撮合(PseudoFiller)
+    本就是无前视的量参与语义, 故整体注释禁用、直接委托。保留类与注册
+    (b"vwap"/b"twap") 以兼容历史订单参数。
+    """
 
     def __init__(self, bint is_vwap=True, double impact=0.05,
                  int32_t batch_size=1000, double slip_perc=0.005):
@@ -297,87 +317,102 @@ cdef class AlgoFiller(PseudoFiller):
         self.is_vwap = is_vwap
 
     cdef void _execute(self, Order order, Position p_obj, double cash, Lines lines):
-        cdef OrderCoreData core = order.core
-        cdef AssetCore info = order.info
-        cdef int32_t start_loc = lines.get_loc(core.created_dt)
-        cdef int32_t n = len(lines)
-        cdef int32_t total_bars = n - start_loc
-        if total_bars <= 0:
-            return
+        PseudoFiller._execute(self, order, p_obj, cash, lines)
+        return
 
-        # loc high / low 
-        cdef double loc_highest = lines.high[0]
-        cdef double loc_lowest = lines.low[0]
-        cdef int32_t i
-
-        for i in range(1, start_loc):
-            if lines.high[i] > loc_highest: loc_highest = lines.high[i]
-            if lines.low[i] < loc_lowest: loc_lowest = lines.low[i]
-
-        cdef int32_t total_size = core.size if core.size > 0 else calculate(order, p_obj, cash, lines.open[start_loc], self.slip, self.comm)
-        if total_size <= 0:
-            return
-
-        cdef bint is_buy = order.isbuy
-
-        cdef int32_t remains = total_size
-        cdef int32_t filled_so_far = 0
-        cdef int32_t chunk_size, filled
-        cdef double expected_ratio, target_fill, fill_factor, order_price, cost
-
-        # VWAP ESTIMATE Sum Volume
-        cdef double total_vol = 0.0
-        cdef double accum_vol = 0.0
-        cdef int32_t bars_passed = 0
-
-        if self.is_vwap:
-            for i in range(start_loc, n):
-                total_vol += lines.volume[i]
-            if total_vol <= 0:
-                return
-
-        for exec_loc in range(start_loc, n):
-            if remains <= 0:
-                break
-
-            # Schedule ratio
-            if self.is_vwap:
-                accum_vol += lines.volume[exec_loc]
-                expected_ratio = accum_vol / total_vol
-            else:
-                bars_passed += 1
-                expected_ratio = <double>bars_passed / total_bars
-
-            target_fill = (total_size * expected_ratio) - filled_so_far
-            if target_fill <= 0:
-                continue
-
-            # update extreme value
-            if lines.high[exec_loc] > loc_highest: loc_highest = lines.high[exec_loc]
-            if lines.low[exec_loc] < loc_lowest: loc_lowest = lines.low[exec_loc]
-
-            fill_factor = _execute_factor(
-                lines.high[exec_loc], lines.low[exec_loc], lines.close[exec_loc], loc_highest, loc_lowest, is_buy)
-            if fill_factor == 0.0:
-                continue
-
-            chunk_size = <int32_t>(target_fill * fill_factor)
-            chunk_size = _round_to_lot(chunk_size, info.tick_size, exec_loc == n - 1 and not is_buy)
-            if chunk_size > remains:
-                chunk_size = remains
-            if chunk_size <= 0:
-                continue
-
-            order_price = lines.close[exec_loc]
-            filled, cost = self._fill(order, total_size, exec_loc, chunk_size, is_buy,
-                                       order_price, lines, cash)
-            if filled <= 0:
-                break
-
-            if is_buy:
-                cash -= cost
-            filled_so_far += filled
-            remains -= filled
+        # ================= 原 VWAP/TWAP 调度(含未来函数, 勿启用) =================
+        # cdef OrderCoreData core = order.core
+        # cdef AssetCore info = order.info
+        # cdef int32_t start_loc = lines.get_loc(core.created_dt)
+        # cdef int32_t n = len(lines)
+        # cdef int32_t total_bars = n - start_loc
+        # if total_bars <= 0:
+        #     return
+        #
+        # # loc high / low
+        # cdef double loc_highest = lines.high[0]
+        # cdef double loc_lowest = lines.low[0]
+        # cdef int32_t i
+        #
+        # for i in range(1, start_loc):
+        #     if lines.high[i] > loc_highest: loc_highest = lines.high[i]
+        #     if lines.low[i] < loc_lowest: loc_lowest = lines.low[i]
+        #
+        # cdef int32_t total_size = core.size if core.size > 0 else calculate(order, p_obj, cash, lines.open[start_loc], self.slip, self.comm)
+        # if total_size <= 0:
+        #     return
+        #
+        # cdef bint is_buy = order.isbuy
+        #
+        # cdef int32_t remains = total_size
+        # cdef int32_t filled_so_far = 0
+        # cdef int32_t chunk_size, filled
+        # cdef int32_t avail
+        # cdef double expected_ratio, target_fill, fill_factor, order_price, cost
+        #
+        # if not is_buy:
+        #     # never sell more than T+1 available shares
+        #     avail = p_obj.get_available()
+        #     if total_size > avail:
+        #         total_size = avail
+        #         remains = total_size
+        #
+        # # FUTURE LEAK: total_vol 对当日剩余全部 bar 求和, 提交时刻不可知
+        # cdef double total_vol = 0.0
+        # cdef double accum_vol = 0.0
+        # cdef int32_t bars_passed = 0
+        #
+        # if self.is_vwap:
+        #     for i in range(start_loc, n):
+        #         total_vol += lines.volume[i]
+        #     if total_vol <= 0:
+        #         return
+        #
+        # for exec_loc in range(start_loc, n):
+        #     if remains <= 0:
+        #         break
+        #
+        #     # Schedule ratio
+        #     if self.is_vwap:
+        #         accum_vol += lines.volume[exec_loc]
+        #         expected_ratio = accum_vol / total_vol
+        #     else:
+        #         bars_passed += 1
+        #         expected_ratio = <double>bars_passed / total_bars
+        #
+        #     target_fill = (total_size * expected_ratio) - filled_so_far
+        #     if target_fill <= 0:
+        #         continue
+        #
+        #     # update extreme value
+        #     if lines.high[exec_loc] > loc_highest: loc_highest = lines.high[exec_loc]
+        #     if lines.low[exec_loc] < loc_lowest: loc_lowest = lines.low[exec_loc]
+        #
+        #     fill_factor = _execute_factor(
+        #         lines.high[exec_loc], lines.low[exec_loc], lines.close[exec_loc], loc_highest, loc_lowest, is_buy)
+        #     if fill_factor == 0.0:
+        #         continue
+        #
+        #     chunk_size = <int32_t>(target_fill * fill_factor)
+        #     # A股规则: 买入必须整手; 卖出可一次性卖出全部余额(含零股)
+        #     chunk_size = _round_to_lot(chunk_size, info.tick_size,
+        #                                (not is_buy) and (exec_loc == n - 1 or chunk_size >= remains))
+        #     if chunk_size > remains:
+        #         chunk_size = remains
+        #     if chunk_size <= 0:
+        #         continue
+        #
+        #     order_price = lines.close[exec_loc]
+        #     filled, cost = self._fill(order, total_size, exec_loc, chunk_size, is_buy,
+        #                                order_price, lines, cash)
+        #     if filled <= 0:
+        #         break
+        #
+        #     if is_buy:
+        #         cash -= cost
+        #     filled_so_far += filled
+        #     remains -= filled
+        # ================================ 原实现结束 ================================
 
 
 cdef class VWAPFiller(AlgoFiller):

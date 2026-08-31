@@ -24,7 +24,7 @@ cdef class Account:
 
     cdef void add_cash(self, double cash)
 
-    cdef void update(self, list trades, double pnl)
+    cdef void update(self, list trades)
     
     cdef void sync(self, int64_t tick, dict pobjs, dict closes)
     
