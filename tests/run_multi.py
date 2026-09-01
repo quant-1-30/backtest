@@ -15,12 +15,11 @@ from bt_core.cerebro import Cerebro
 from bt_core.feed import DataBase
 from bt_core.pnc import Pnc
 from bt_core.utils.dateintern import ts2intdt
-from bt_core.feeds import *  # noqa: F401,F403 — 注册 store 的 DataCls(导入副作用)
-from bt_core.brokers import *  # noqa: F401,F403 — 注册 BrokerCls(导入副作用)
+from bt_core.feeds import *  
+from bt_core.brokers import *  
 
 warnings.filterwarnings('ignore')
 
-# 本次多标的运行的固定 client_id(已注册进 user_info), verify 脚本按它找 experiment
 MULTI_CLIENT_ID = uuid.UUID("5a1f0c9e-2b7d-4e8a-9f30-6c4d1b2e7a55")
 
 
@@ -36,17 +35,8 @@ class FixedSize(bt.Sizer):
 
 
 class MultiSignalPatch(DataBase):
-    """多标的轮动信号源(SignalPatch 的多标的扩展)。
-
-    常量 topk 会让所有持仓永远 in_topk、从不触发卖出; 这里按 ymd 确定性
-    轮动 —— 每个标的在 10 天周期里缺席 3 天, 缺席即 not-in-topk 触发卖出,
-    回归后重新买入, 形成持续的多标的买卖流(费率/仓位轨迹验证需要)。
-    """
     lines = ('datetime',)
     params = (("sids", ()),)
-
-    def _start(self, *args, **kwargs):
-        self.sid = self.p.sids[0] if self.p.sids else b""
 
     def _load(self):
         return False
@@ -55,7 +45,6 @@ class MultiSignalPatch(DataBase):
         return {
             s: 0.0
             for i, s in enumerate(self.p.sids)
-            if (current_day + i * 3) % 10 >= 3  # 每标的缺席 3/10 天
         }
 
     def notify_metrics(self, dts: int):
@@ -102,7 +91,7 @@ if __name__ == '__main__':
         event_type=bt.timer.TimerEvent.TRADE,
     )
 
-    # 多周期 resample: 日 / 周 / 月
+    # resample 日 / 周 / 月
     cerebro.resampledata(timeframe=bt.TimeFrame.Days, adjbartime=False)
     cerebro.resampledata(timeframe=bt.TimeFrame.Weeks, adjbartime=False)
     cerebro.resampledata(timeframe=bt.TimeFrame.Months, adjbartime=False)
@@ -115,11 +104,8 @@ if __name__ == '__main__':
     sids = [b"300308", b"600000", b"000001"]
     fromdate = int(os.getenv("FROMDATE", 20040101))
     todate = int(os.getenv("TODATE", 20260531))
-    # run_tag 进 extra_info, 避免同配置重跑撞 uq_client_strategy_extra_info
-    run_tag = os.getenv("RUNTAG", datetime.datetime.now().strftime("%H%M%S"))
     try:
-        cerebro.run(cash=100000, sid=sids, fromdate=fromdate, todate=todate,
-                    run_tag=run_tag, benchmark=[b"1A0001"])
+        cerebro.run(cash=100000, sid=sids, fromdate=fromdate, todate=todate, benchmark=[b"1A0001"])
     except Exception as e:
         print(f"运行报错: {e}")
         if hasattr(cerebro, '_shutdown'):

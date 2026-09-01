@@ -21,7 +21,6 @@ from bt_core.execution.gateway.interface import async_gt
 from bt_core.utils.dateintern import ts2intdt
 from bt_sdk.ctx import initialize_runner, get_md_api
 
-# 费率分界(unix 秒, 与 comminfo.pyx 同源但此处独立抄录 —— 验证器不得 import 被验证逻辑)
 STAMP_CKPT = 1693180800        # 2023-08-28 印花税 1‰ -> 0.5‰
 TRANSFER_CKPT = 1651180800     # 2022-04-29 过户费 0.02‰ -> 0.01‰
 TRANSFER_UNIFY_CKPT = 1438387200  # 2015-08-01 沪深统一 0.02‰(此前沪 0.06‰ / 深 0)
@@ -49,7 +48,7 @@ def expect_comm(created_dt, is_sell, amount, sse):
 
 
 async def fetch_events(sids):
-    """全区间除权/配股事件, 按 sid -> {ex_date: [(type, a, b, c)]}"""
+    """sid -> {ex_date: [(type, a, b, c)]}"""
     ev = {}
     for sid in sids:
         body = QueryBody(start_date=19900101, end_date=21001231, sid=[sid])
@@ -80,7 +79,7 @@ async def main():
     ap.add_argument("--cash", type=float, default=100000.0)
     args = ap.parse_args()
 
-    # 引导 md 客户端(与 localstore.start 同构): rpc_async 依赖 runner loop
+    # localstore.start / rpc_async ---> runner loop
     runner = initialize_runner()
     runner.start()
     get_md_api().start(runner.get_loop())
@@ -95,7 +94,7 @@ async def main():
         exp = await conn.fetchval(
             "select experiment_id from experiment where client_id=$1 order by id desc limit 1",
             uuid.UUID(args.client))
-    exp = uuid.UUID(str(exp))  # asyncpg 返回自带 UUID 类型, 统一成标准 uuid
+    exp = uuid.UUID(str(exp))  
     print(f"experiment: {exp}")
 
     accts = await conn.fetch(
@@ -136,11 +135,6 @@ async def main():
           f"max_err={worst:.6f} bad={bad}" if bad else f"max_err={worst:.6f}")
 
     # ------------------------------------------------ single replay pass
-    # 真实时序重建: DB 里的 executed_dt/created_dt 是"成交 bar 的戳"而非提交时刻
-    # (agents.md §5.11): 次晨 09:30 的 on_risk 卖单由停在昨夜末 bar 的策略时钟
-    # 盖昨日的戳, filler 按戳回填到昨日 bar 上成交。判别规则: 卖单 size 超过
-    # 盖章日当时的可卖量(T+1 使其不可能当日成交) => 必为次晨卖单, 推迟到
-    # D+1 开盘前(解锁/事件之后、当日成交之前)应用 —— 与引擎真实时序一致。
     events = await fetch_events(sids)
     st = {s: dict(size=0, avail=0, cost=0.0) for s in sids}
     bits_by_day = defaultdict(list)
@@ -181,7 +175,7 @@ async def main():
     div_total, rights_total = 0.0, 0.0
     div_events = []
     traj = {}
-    deferred = []  # 次晨卖单: (sid, size)
+    deferred = []  # next day (sid, size)
     last_day = None
     all_days = sorted(set(bits_by_day) | {r["datetime"] for r in vpos})
 
@@ -195,7 +189,7 @@ async def main():
             for s, sz in deferred:
                 apply_sell(st[s], sz)
             deferred = []
-        elif deferred:  # 日序不连续之外仍有遗留(防御)
+        elif deferred: 
             for s, sz in deferred:
                 apply_sell(st[s], sz)
             deferred = []
@@ -234,8 +228,6 @@ async def main():
           f"{len(bad_avail)} 违例" if bad_avail else "")
 
     # ------------------------------------------------ 5. trajectory diff
-    # 已知模式: 盖章日歧义的次晨卖单会造成个别行差异, 但次行自愈(agents.md
-    # §5.11, 单标的验证时为 12/2590)—— 只有"不自愈"的差异才算失败。
     db_rows = {(bytes(r["sid"]), r["datetime"]): r["size"] for r in vpos}
     days_by_sid = {}
     for s, d in db_rows:
@@ -271,26 +263,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    """
-        DB 反向验证器: 对一次回测运行的 account / vtposition / vtorder / order_bit
-        做独立于引擎的重算与逐项核对(agents.md §6.2 口径)
 
-        用法(需要 md-server 在线取除权事件, PG 环境变量已在 .env):
-
-            $PY tests/verify_event_cash.py --experiment <uuid> --cash 100000
-            $PY tests/verify_event_cash.py --client 5a1f0c9e-... --cash 100000  # 该 client 最新实验
-
-        检查项:
-        1. account.datetime 全部落在 [19900101, 21001231] 且逐日唯一
-        2. 逐 order_bit 费率恒等式(佣金分界/印花税/过户费三分界/交易所路由), 容差 0.005
-        3. 现金守恒: init - Σ(±px*sz) - Σcomm + Σ分红 - Σ配股缴款 == 末日 cash
-        4. 买入全部整手; vtposition 恒 available <= size
-        5. 独立重放成交+除权事件 -> 与 vtposition 逐行 diff(允许已知的 T+1 次晨自愈差异)
-
-        重放语义(与引擎一致, 见 agents.md §4/§5.11):
-        - 日切换: 先无条件 T+1 解锁(available = size), 再按 (prev, curr] 到期区间
-            应用除权/配股事件(停牌洞内事件在复牌日补派)
-        - 送转: size/available 同按 floor 截断, cost /= sizer_ratio, 现金 += size*bonus/10
-        - 配股: rights = floor(size*ratio/10), cost 加权, 现金 -= rights*price, available 不变(T+1)
-    """
     sys.exit(asyncio.run(main()))

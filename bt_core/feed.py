@@ -403,6 +403,10 @@ class AbstractDataBase(with_metaclass(MetaAbstractDataBase, OHLCDateTime)):
         self.log_shm.publish_metric(b"close", self.close[-1], dts)
         self.log_shm.publish_metric(b"volume", self.volume[-1], dts)
 
+    def get_topk(self, current_day: int) -> dict:
+        # used for scoreparquet
+        return {}
+
     def on_dt_over(self, dts: int): 
         pass
 

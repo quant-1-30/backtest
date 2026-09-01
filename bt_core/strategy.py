@@ -378,7 +378,7 @@ class Strategy(with_metaclass(MetaStrategy, StrategyBase)):
             snapshot = self.store.submit(self.experiment_id, order)
             trades = snapshot.trades
             if trades:
-                # print("buy trades: ", len(trades))  # 每笔调仓都打
+                # print("buy trades: ", len(trades))
                 self.shm_chan.publish_snapshot(snapshot) # publish trade to shared memory for writer to consume
 
             self.shm_chan.publish_order(order)
@@ -601,7 +601,7 @@ class SignalStrategy(with_metaclass(MetaSigStrategy, Strategy)):
         snapshot = self.get_snapshot()
 
         _plan = self.pnc.generate_plan(current_day, topk, snapshot)
-        # print("generate_plan", _plan)  # 泄露策略信号, 勿启用
+        # print("generate_plan", _plan)  
 
         if l_enter:
             if self._accumulate:

@@ -219,9 +219,24 @@ if __name__ == '__main__':
     cerebro.add_signal(bt.SIGNAL_SHORT, SellSignal, ddata) 
     cerebro.add_signal(bt.SIGNAL_SHORT, DrawDownSignal)
 
-    # add parquet
-    from bt_core.feeds import SignalPatch
-    patch_data = SignalPatch(sid=b"300308")
+    # add const feed
+    from bt_core.feed import DataBase
+
+    class ConstTopkPatch(DataBase):
+        
+        lines = ('datetime',)
+        params = (("sids", ()),)
+
+        def _load(self):
+            return False
+
+        def get_topk(self, current_day: int) -> dict:
+            return {s: 0.0 for s in self.p.sids}
+
+        def notify_metrics(self, dts: int):
+            pass
+
+    patch_data = ConstTopkPatch(sids=[b"300308"])
     cerebro.adddata(patch_data)
 
     try:
