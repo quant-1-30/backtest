@@ -65,6 +65,10 @@ cdef class Account:
     cdef void add_cash(self, double cash):
         cdef double _cash
         _cash = self.core.cash + cash
+        if _cash < 0.0:
+            raise ValueError(
+                f"negative cash forbidden: cash={self.core.cash}, delta={cash}"
+            )
         self.core.cash = _cash
 
     cdef void update(self, list trades):

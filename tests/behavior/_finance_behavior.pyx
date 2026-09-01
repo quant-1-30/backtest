@@ -158,7 +158,7 @@ def test_event_bonus_transfer_10_2_1_5():
     cdef vector[EventItem] events
     events.push_back(_adj(2.0, 1.0, 5.0))
 
-    cdef double cash = p.process_events(events)
+    cdef double cash = p.process_events(events, 1e18)
     assert p.core.size == 130
     assert p.core.available == 130
     _assert_close(cash, 50.0, "bonus cash = size * bonus/10")
@@ -172,11 +172,63 @@ def test_event_rights_10_3_at_8():
     cdef vector[EventItem] events
     events.push_back(_rgt(3.0, 8.0))
 
-    cdef double cash = p.process_events(events)
+    cdef double cash = p.process_events(events, 1e18)
     assert p.core.size == 130
     _assert_close(cash, -240.0, "rights cash = -rights_size * price")
     _assert_close(p.core.cost_basis, (10.0 * 100 + 8.0 * 30) / 130.0, "weighted")
     assert p.core.available == 100, "right shares T+1: available unchanged"
+
+
+def test_rights_abandoned_when_cash_insufficient():
+    # 10配3@8 需缴 240, 现金不足 -> 整体放弃: 不增股不缴款, 成本不动
+    cdef Asset a = _asset(b"600519")
+    cdef Position p = Position(EID, b"600519", a, 0, 0, 100, 100, 10.0)
+    cdef vector[EventItem] events
+    events.push_back(_rgt(3.0, 8.0))
+
+    cdef double cash = p.process_events(events, 239.99)
+    assert p.core.size == 100, "insufficient cash must abandon rights"
+    assert p.core.available == 100
+    _assert_close(cash, 0.0, "abandoned rights pays nothing")
+    _assert_close(p.core.cost_basis, 10.0, "abandoned rights keeps cost")
+
+
+def test_rights_boundary_cash_exactly_enough():
+    # 缴款恰等于现金: 可认购(严格大于才放弃)
+    cdef Asset a = _asset(b"600519")
+    cdef Position p = Position(EID, b"600519", a, 0, 0, 100, 100, 10.0)
+    cdef vector[EventItem] events
+    events.push_back(_rgt(3.0, 8.0))
+
+    cdef double cash = p.process_events(events, 240.0)
+    assert p.core.size == 130
+    _assert_close(cash, -240.0, "exact cash still subscribes")
+
+
+def test_batch_dividend_funds_rights_same_settlement():
+    # 同批事件: 分红先到账滚动计入现金, 紧随其后的配股可据此认购
+    cdef Asset a = _asset(b"600519")
+    cdef Position p = Position(EID, b"600519", a, 0, 0, 100, 100, 10.0)
+    cdef vector[EventItem] events
+    events.push_back(_adj(0.0, 0.0, 24.0))   # 派 24/10 -> +240
+    events.push_back(_rgt(3.0, 8.0))         # 需缴 240
+
+    cdef double cash = p.process_events(events, 0.0)
+    assert p.core.size == 130, "dividend in batch funds the rights"
+    _assert_close(cash, 0.0, "net cash flow = +240 - 240")
+
+
+def test_batch_rights_abandoned_then_later_dividend_still_paid():
+    # 配股被放弃后, 同批后续分红仍正常入账(顺序处理互不影响)
+    cdef Asset a = _asset(b"600519")
+    cdef Position p = Position(EID, b"600519", a, 0, 0, 100, 100, 10.0)
+    cdef vector[EventItem] events
+    events.push_back(_rgt(3.0, 8.0))         # 需缴 240, 现金 0 -> 放弃
+    events.push_back(_adj(0.0, 0.0, 5.0))    # 派 5/10 -> +50
+
+    cdef double cash = p.process_events(events, 0.0)
+    assert p.core.size == 100, "rights abandoned"
+    _assert_close(cash, 50.0, "later dividend still paid")
 
 
 def test_event_odd_share_floor():
@@ -185,14 +237,14 @@ def test_event_odd_share_floor():
     cdef Position p = Position(EID, b"600519", a, 0, 0, 105, 105, 10.0)
     cdef vector[EventItem] events
     events.push_back(_adj(2.0, 1.0, 0.0))
-    p.process_events(events)
+    p.process_events(events, 1e18)
     assert p.core.size == 136, f"expect floor(105*1.3)=136, got {p.core.size}"
 
     # 105 股 10 配 3 -> 31 = floor(31.5)
     cdef Position p2 = Position(EID, b"600519", a, 0, 0, 105, 105, 10.0)
     cdef vector[EventItem] events2
     events2.push_back(_rgt(3.0, 8.0))
-    p2.process_events(events2)
+    p2.process_events(events2, 1e18)
     assert p2.core.size == 105 + 31, f"expect rights floor(31.5)=31, got {p2.core.size}"
 
 
@@ -202,7 +254,7 @@ def test_event_available_le_size_after_ratio():
     cdef Position p = Position(EID, b"600519", a, 0, 0, 105, 60, 10.0)
     cdef vector[EventItem] events
     events.push_back(_adj(2.0, 1.0, 0.0))
-    p.process_events(events)
+    p.process_events(events, 1e18)
     assert p.core.size == 136
     assert p.core.available == 78, f"expect floor(60*1.3)=78, got {p.core.available}"
     assert p.core.available <= p.core.size
@@ -214,7 +266,7 @@ def test_event_float_semantics_5700_14():
     cdef Position p = Position(EID, b"600519", a, 0, 0, 5700, 5700, 10.0)
     cdef vector[EventItem] events
     events.push_back(_adj(2.0, 2.0, 0.0))  # 10送2转2 => sizer_ratio 1.4
-    p.process_events(events)
+    p.process_events(events, 1e18)
     assert p.core.size == 7979, f"expect 7979, got {p.core.size}"
 
 
@@ -368,6 +420,20 @@ def test_account_update_cashflow_signs():
     acct.update(trades)
     _assert_close(acct.core.cash, 100000.0 - 1000.0 - 7.0 + 550.0 - 6.0, "cash flow")
     assert acct.core.datetime == TS_NOON, "intraday dt = max executed_dt"
+
+
+def test_account_add_cash_negative_forbidden():
+    # 事件现金通道(add_cash)禁止把 cash 推到 0 以下
+    cdef Account acct = Account(EID, 0, 0.0, 100.0)
+    acct.add_cash(-50.0)
+    _assert_close(acct.core.cash, 50.0, "lawful deduction")
+
+    try:
+        acct.add_cash(-60.0)
+        raise AssertionError("add_cash below zero must raise")
+    except ValueError:
+        pass
+    _assert_close(acct.core.cash, 50.0, "failed deduction must not apply")
 
 
 def test_account_sync_normalizes_ts_and_guards_ymd():

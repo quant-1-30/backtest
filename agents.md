@@ -46,7 +46,7 @@ $PY setup.py build_ext --inplace
 | T+1 | `position.pyx`（available vs size）、`filler.pyx` 卖出 clamp | 买入当天 available=0；`on_dt_over` 解锁 |
 | 手数 | `filler.pyx _round_to_lot` | 买入按 100 股整手；**零股只能在卖出最后一笔一次性卖出**（`last_fill` 参数控制） |
 | 印花税/过户费/佣金 | `comminfo.pyx` | 费率带时间分界点（常量 `*_CKPT`）；5 元最低**仅佣金**；过户费 2015-08-01 前沪市按面值 0.06‰、深市免收 |
-| 分红送转/配股 | `position.pyx _process_event` | 送转/配股按 `floor` 截断（零头不足 1 股直接舍去，"不足就是不足"）；配股现金 = -rights_size*price；成本加权 |
+| 分红送转/配股 | `position.pyx _process_event` | 送转/配股按 `floor` 截断（零头不足 1 股直接舍去，"不足就是不足"）；配股现金 = -rights_size*price；成本加权；**配股缴款超过现金则整体放弃配股（`process_events(events, cash)` 滚动现金判定，同批分红先到账可认购），`Account.add_cash` 禁止 cash<0（raise）** |
 | 新股涨跌幅豁免 | `asset.pyx restricted()` | 用**真实日历日**差（`_days_from_civil`），不能用 ymd 直接相减（跨月/跨年会错） |
 | 除权除息因子 | `feed.py apply_factor` | **当日 bar 由 feed 层 save/restore line[0] 保留**（除权日行情本身已是除权后价格，勿再乘）；历史 bar 价格 `*factor`、量 `*1/factor`（amount 不动，恰保持 p×v≈amount 自洽）；minute 主 feed 与 resample 的 DataClone 各自对**自己的 buffer** 调整（clone 经 `_start` 共享 `adj_factors`）。因子按 `(record_dt, current_dt]` **到期区间**应用而非精确匹配 bar 日——停牌窗口内的 ex-date 在复牌首根 bar 补乘（300308 2016 停牌、20160801 十派0.1 实测）。`LineBuffer.apply_factor` 调全 buffer，环形模式下"排除当根"不可能用静态切片表达（`array[:-1]` 只在 `_cur_idx==maxlen-1` 时恰好排除当根，其余相位丢最老 bar 且漏调当根）——勿再试 |
 

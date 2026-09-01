@@ -189,8 +189,13 @@ cdef class TrackerActor:
         return Resp(body=self._latest_snapshot)
 
     cdef void _sync_event(self, bytes experiment_id, dict pobjs, dict py_adj_dfs, dict py_rgt_dfs):
+        # running cash seeds from the account and rolls with each event batch,
+        # so a rights subscription is abandoned (never overdrafts) when the
+        # cost exceeds cash — incl. dividends arriving in the same batch
+        cdef double running_cash = self.cash_manager.get_account(experiment_id).core.cash
         cdef double event_cash = 0.0
-        cdef Position pos_obj  
+        cdef double delta
+        cdef Position pos_obj
         cdef unordered_map[int32_t, vector[AdjustmentData]] cpp_adj_map
         cdef unordered_map[int32_t, vector[RightData]] cpp_rgt_map
         cdef vector[EventItem] v_events
@@ -252,7 +257,9 @@ cdef class TrackerActor:
                     v_events.push_back(temp)
                 
             if not v_events.empty():
-                event_cash += pos_obj.process_events(v_events)
+                delta = pos_obj.process_events(v_events, running_cash)
+                event_cash += delta
+                running_cash += delta
 
         if event_cash != 0:
             self.cash_manager.add_cash(experiment_id, event_cash)

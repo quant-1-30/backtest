@@ -126,14 +126,23 @@ cdef class Position:
         else:
             self.core.pnl_ratio = 0.0
  
-    cdef double process_events(self, vector[EventItem]& events): # should update T datetime 
+    cdef double process_events(self, vector[EventItem]& events, double cash): # should update T datetime
+        # right share  <= cash  
         cdef double total_bonus = 0.0
+        cdef double delta
         cdef int32_t i
         cdef int32_t n = events.size()
-        
+
         for i in range(n):
-            total_bonus += self._process_event(events[i])
-            
+            if events[i].event_type == 1:
+                # abandon rights entirely when subscription cost exceeds
+                # running cash; cost formula must mirror _process_event
+                if <double>(<int32_t>floor(self.core.size * events[i].rgt.ratio / 10.0)) * events[i].rgt.price > cash:
+                    continue
+            delta = self._process_event(events[i])
+            total_bonus += delta
+            cash += delta
+
         return total_bonus
 
     cdef double _process_event(self, EventItem item):

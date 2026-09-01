@@ -1,6 +1,7 @@
 
 import argparse
 import asyncio
+import datetime
 import math
 import os
 import sys
@@ -45,6 +46,13 @@ def expect_comm(created_dt, is_sell, amount, sse):
     else:
         tf = 6e-5 if sse else 0.0
     return comm + stamp + amount * tf
+
+
+def day_diff(a, b):
+    """ymd int 之间的真实日历日差 (ymd 直接相减跨月/跨年会失真)"""
+    da = datetime.date(a // 10000, (a // 100) % 100, a % 100)
+    db = datetime.date(b // 10000, (b // 100) % 100, b % 100)
+    return (da - db).days
 
 
 async def fetch_events(sids):
@@ -182,11 +190,24 @@ async def main():
     for day in all_days:
         # 日切换: 解锁 -> 到期事件 -> 次晨卖单 -> 当日成交
         if last_day is not None and day > last_day:
+            deferred_map = {}
+            for s, sz in deferred:
+                deferred_map[s] = deferred_map.get(s, 0) + sz
+            # ymd 直接相减跨月/跨年会放大间隔, 必须用真实日历日差
+            long_gap = day_diff(day, last_day) > 10
             for s in sids:
                 p = st[s]
                 p["avail"] = p["size"]
+                # 长空窗(停牌/空仓跨越多月)且该 sid 有次晨卖单: 卖单成交于空窗
+                # 首个交易日上午, 晚于卖出日的 ex_date 事件须按卖出后持仓结算
+                # (引擎按结算时点持仓入账, 已清仓则无分红; 见 497c1f76 实验
+                # 20251013 十派4 幻影分红误报)。普通节假日(≤10 天)保持"先事件
+                # 后卖单": ex_date 恰为卖出日时, 登记日持仓仍享分红, 引擎在
+                # rollover 先结算事件再执行 09:30 卖单。
+                if long_gap and s in deferred_map:
+                    apply_sell(p, deferred_map.pop(s))
                 apply_events(s, p, last_day, day, day)
-            for s, sz in deferred:
+            for s, sz in deferred_map.items():
                 apply_sell(st[s], sz)
             deferred = []
         elif deferred: 

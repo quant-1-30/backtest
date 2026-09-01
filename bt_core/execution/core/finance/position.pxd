@@ -47,7 +47,7 @@ cdef class Position:
     
     cdef double _process_event(self, EventItem item)
     
-    cdef double process_events(self, vector[EventItem]& events)
+    cdef double process_events(self, vector[EventItem]& events, double cash)
     
     cdef void _handle_merger(self, bytes target_sid, float close, float ratio)
 
